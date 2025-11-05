@@ -9,46 +9,15 @@ const nl_request = struct {
     rtm: c.rtmsg,
 };
 
-pub fn main() !void {
-    const fd = linux.socket(linux.AF.NETLINK, linux.SOCK.RAW, linux.NETLINK.ROUTE);
-    defer _ = linux.close(@intCast(fd));
-
-    const addr: linux.sockaddr.nl = .{
-        .family = linux.AF.NETLINK,
-        .pid = @intCast(linux.getpid()),
-        .groups = 0,
-    };
-
-    var kern_addr = linux.sockaddr.nl{
-        .family = linux.AF.NETLINK,
-        .pid = 0, // destination: kernel
-        .groups = 0,
-    };
-
-    if (linux.bind(@intCast(fd), @ptrCast(&addr), @sizeOf(@TypeOf(addr))) < 0) {
-        return error.CantBind;
-    }
-
-    const req = nl_request{ .nlh = .{
-        .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_GETROUTE)),
-        .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_DUMP,
-        .nlmsg_len = @sizeOf(nl_request),
-        .nlmsg_seq = @intCast(std.time.timestamp()),
-    }, .rtm = .{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN } };
-
-    const sent = linux.sendto(@intCast(fd), std.mem.asBytes(&req), req.nlh.nlmsg_len, 0, @ptrCast(&kern_addr), @sizeOf(@TypeOf(kern_addr)));
-    if (sent < 0) return error.SendFailed;
-
-    var buf: [8192]u8 = undefined;
+fn read_from_kernel(fd: i32, buf: []u8, kern_addr: *linux.sockaddr) !void {
     var from_len: linux.socklen_t = @sizeOf(linux.sockaddr.nl);
-
     while (true) {
         const len = linux.recvfrom(
-            @intCast(fd),
-            &buf,
+            fd,
+            @ptrCast(buf),
             buf.len,
             0,
-            @ptrCast(&kern_addr),
+            kern_addr,
             &from_len,
         );
         if (len < 0) return error.RecvFailed;
@@ -71,4 +40,44 @@ pub fn main() !void {
             offset += @intCast(c.NLMSG_ALIGN(hdr.nlmsg_len));
         }
     }
+}
+
+fn open_netlink() !i32 {
+    const fd: i32 = @intCast(linux.socket(linux.AF.NETLINK, linux.SOCK.RAW, linux.NETLINK.ROUTE));
+
+    const addr: linux.sockaddr.nl = .{
+        .family = linux.AF.NETLINK,
+        .pid = @intCast(linux.getpid()),
+        .groups = 0,
+    };
+
+    if (linux.bind(@intCast(fd), @ptrCast(&addr), @sizeOf(@TypeOf(addr))) < 0) {
+        return error.CantBind;
+    }
+    return fd;
+}
+
+pub fn main() !void {
+    const fd = try open_netlink();
+    defer _ = linux.close(@intCast(fd));
+
+    // TODO: why is this var and addr is const
+    var kern_addr = linux.sockaddr.nl{
+        .family = linux.AF.NETLINK,
+        .pid = 0, // destination: kernel
+        .groups = 0,
+    };
+
+    const req = nl_request{ .nlh = .{
+        .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_GETROUTE)),
+        .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_DUMP,
+        .nlmsg_len = @sizeOf(nl_request),
+        .nlmsg_seq = @intCast(std.time.timestamp()),
+    }, .rtm = .{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN } };
+
+    const sent = linux.sendto(@intCast(fd), std.mem.asBytes(&req), req.nlh.nlmsg_len, 0, @ptrCast(&kern_addr), @sizeOf(@TypeOf(kern_addr)));
+    if (sent < 0) return error.SendFailed;
+
+    var buf: [8192]u8 = undefined;
+    try read_from_kernel(fd, &buf, @ptrCast(&kern_addr));
 }
