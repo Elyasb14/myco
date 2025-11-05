@@ -12,5 +12,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+
+    myco_exe.linkLibC();
     b.installArtifact(myco_exe);
 }
