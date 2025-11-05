@@ -28,7 +28,6 @@ pub fn main() !void {
     if (linux.bind(@intCast(fd), @ptrCast(&addr), @sizeOf(@TypeOf(addr))) < 0) {
         return error.CantBind;
     }
-    // linux.NetlinkMessageType.RTM_GETROUTE
 
     const req = nl_request{ .nlh = .{
         .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_GETROUTE)),
@@ -40,7 +39,6 @@ pub fn main() !void {
     const sent = linux.sendto(@intCast(fd), std.mem.asBytes(&req), req.nlh.nlmsg_len, 0, @ptrCast(&kern_addr), @sizeOf(@TypeOf(kern_addr)));
     if (sent < 0) return error.SendFailed;
 
-    // --- Receive replies ---
     var buf: [8192]u8 = undefined;
     var from_len: linux.socklen_t = @sizeOf(linux.sockaddr.nl);
 
