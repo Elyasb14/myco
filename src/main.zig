@@ -19,7 +19,7 @@ pub fn main() !void {
         .groups = 0,
     };
 
-    const kern_addr = linux.sockaddr.nl{
+    var kern_addr = linux.sockaddr.nl{
         .family = linux.AF.NETLINK,
         .pid = 0, // destination: kernel
         .groups = 0,
@@ -38,6 +38,39 @@ pub fn main() !void {
     }, .rtm = .{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN } };
 
     const sent = linux.sendto(@intCast(fd), std.mem.asBytes(&req), req.nlh.nlmsg_len, 0, @ptrCast(&kern_addr), @sizeOf(@TypeOf(kern_addr)));
+    if (sent < 0) return error.SendFailed;
 
-    std.debug.print("sent: {d}\n", .{sent});
+    // --- Receive replies ---
+    var buf: [8192]u8 = undefined;
+    var from_len: linux.socklen_t = @sizeOf(linux.sockaddr.nl);
+
+    while (true) {
+        const len = linux.recvfrom(
+            @intCast(fd),
+            &buf,
+            buf.len,
+            0,
+            @ptrCast(&kern_addr),
+            &from_len,
+        );
+        if (len < 0) return error.RecvFailed;
+        if (len == 0) break;
+
+        var offset: usize = 0;
+        while (offset < len) {
+            const hdr: *const c.nlmsghdr = @ptrCast(@alignCast(&buf[offset]));
+
+            if (hdr.nlmsg_type == c.NLMSG_DONE) {
+                std.debug.print("End of dump\n", .{});
+                return;
+            } else if (hdr.nlmsg_type == c.NLMSG_ERROR) {
+                std.debug.print("Netlink error\n", .{});
+                return;
+            } else if (hdr.nlmsg_type == c.RTM_NEWROUTE) {
+                std.debug.print("Got RTM_NEWROUTE message (len {d})\n", .{hdr.nlmsg_len});
+            }
+
+            offset += @intCast(c.NLMSG_ALIGN(hdr.nlmsg_len));
+        }
+    }
 }
