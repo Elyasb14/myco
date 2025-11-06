@@ -9,7 +9,7 @@ const nl_request = struct {
     rtm: c.rtmsg,
 };
 
-fn get_route_dump_resp(fd: i32, kern_addr: *linux.sockaddr.nl) !void {
+fn get_route_dump_resp(fd: i32, kern_addr: *linux.sockaddr.nl) void {
     var buf: [8192]u8 = undefined;
     var from_len: linux.socklen_t = @sizeOf(linux.sockaddr.nl);
     while (true) {
@@ -21,7 +21,7 @@ fn get_route_dump_resp(fd: i32, kern_addr: *linux.sockaddr.nl) !void {
             @ptrCast(kern_addr),
             &from_len,
         );
-        if (len < 0) return error.RecvFailed;
+        if (len < 0) break;
         if (len == 0) break;
 
         var offset: usize = 0;
@@ -125,5 +125,5 @@ pub fn main() !void {
 
     do_route_dump_req(fd, kern_addr);
 
-    try get_route_dump_resp(fd, &kern_addr);
+    get_route_dump_resp(fd, &kern_addr);
 }
