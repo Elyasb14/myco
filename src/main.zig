@@ -91,7 +91,6 @@ fn parse_rtattrs(buf: []const u8) void {
             else => {},
         }
 
-        // TODO: why does this work?
         offset += @intCast(c.RTA_ALIGN(rta.rta_len));
     }
 }
