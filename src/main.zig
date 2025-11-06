@@ -57,7 +57,7 @@ fn get_route_dump_resp(fd: i32, kern_addr: *linux.sockaddr.nl) void {
 
 fn parse_rtattrs(buf: []const u8) void {
     var offset: usize = 0;
-    // const attr_align = @sizeOf(u32); // usually 4
+
     while (offset + @sizeOf(c.rtattr) <= buf.len) {
         const rta: *const c.rtattr = @ptrCast(@alignCast(&buf[offset]));
         if (rta.rta_len == 0) break;
@@ -88,7 +88,6 @@ fn parse_rtattrs(buf: []const u8) void {
         }
 
         // TODO: why does this work?
-        // const aligned_len = (@as(usize, rta.rta_len) + attr_align - 1) & ~(@as(usize, attr_align - 1));
         offset += @intCast(c.RTA_ALIGN(rta.rta_len));
     }
 }
