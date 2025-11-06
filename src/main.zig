@@ -35,18 +35,22 @@ fn get_route_dump_resp(fd: i32, kern_addr: *linux.sockaddr.nl) void {
                 std.debug.print("Netlink error\n", .{});
                 return;
             } else if (hdr.nlmsg_type == c.RTM_NEWROUTE) {
-                // offset into sizeof(c.nlmsghdr) and ptrCast
+                // get address immediately after the nlmsghdr
+                // need to cast to *anyopaque because @ptrFromInt produces a typeless pointer (same as void * in C)
                 const rtm_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
 
-                // cast offseted into rtmsg pointer
+                // reinterpret the above pointer as a *const c.rtmsg
+                // @alignCast ensures correct alignment before casting to the specific type
                 const rtmsg: *const c.rtmsg = @ptrCast(@alignCast(rtm_buf_ptr));
+
+                // compute start and length of the attribute section following rtmsg
                 const attr_start = @intFromPtr(rtmsg) + @sizeOf(c.rtmsg);
                 const attr_len = hdr.nlmsg_len - @sizeOf(c.nlmsghdr) - @sizeOf(c.rtmsg);
 
-                // index into buf using what was computed above
+                // create a slice of buf that covers just the attributes section
                 const attr_buf = buf[@intCast(attr_start - @intFromPtr(&buf))..@intCast(attr_start - @intFromPtr(&buf) + attr_len)];
 
-                // parse the attr_buf
+                // parse the attribute buffer
                 parse_rtattrs(attr_buf);
             }
 
