@@ -9,15 +9,16 @@ const nl_request = struct {
     rtm: c.rtmsg,
 };
 
-fn get_route_dump_resp(fd: i32, buf: []u8, kern_addr: *linux.sockaddr) !void {
+fn get_route_dump_resp(fd: i32, kern_addr: *linux.sockaddr.nl) !void {
+    var buf: [8192]u8 = undefined;
     var from_len: linux.socklen_t = @sizeOf(linux.sockaddr.nl);
     while (true) {
         const len = linux.recvfrom(
             fd,
-            @ptrCast(buf),
+            &buf,
             buf.len,
             0,
-            kern_addr,
+            @ptrCast(kern_addr),
             &from_len,
         );
         if (len < 0) return error.RecvFailed;
@@ -34,7 +35,13 @@ fn get_route_dump_resp(fd: i32, buf: []u8, kern_addr: *linux.sockaddr) !void {
                 std.debug.print("Netlink error\n", .{});
                 return;
             } else if (hdr.nlmsg_type == c.RTM_NEWROUTE) {
-                std.debug.print("Got RTM_NEWROUTE message (len {d})\n", .{hdr.nlmsg_len});
+                const rtm: *const c.rtmsg = @ptrCast(@alignCast(@as(*const anyopaque, @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr)))));
+                const attr_start = @intFromPtr(rtm) + @sizeOf(c.rtmsg);
+                const attr_len = hdr.nlmsg_len - @sizeOf(c.nlmsghdr) - @sizeOf(c.rtmsg);
+
+                const attr_buf = buf[@intCast(attr_start - @intFromPtr(&buf))..@intCast(attr_start - @intFromPtr(&buf) + attr_len)];
+
+                parse_rtattrs(attr_buf);
             }
 
             offset += @intCast(c.NLMSG_ALIGN(hdr.nlmsg_len));
@@ -42,6 +49,42 @@ fn get_route_dump_resp(fd: i32, buf: []u8, kern_addr: *linux.sockaddr) !void {
     }
 }
 
+fn parse_rtattrs(buf: []const u8) void {
+    var offset: usize = 0;
+    const attr_align = @sizeOf(u32); // usually 4
+    while (offset + @sizeOf(c.rtattr) <= buf.len) {
+        const rta: *const c.rtattr = @ptrCast(@alignCast(&buf[offset]));
+        if (rta.rta_len == 0) break;
+
+        const data_len: usize = @as(usize, @intCast(rta.rta_len)) - @sizeOf(c.rtattr);
+        const data = buf[offset + @sizeOf(c.rtattr) .. offset + @sizeOf(c.rtattr) + data_len];
+
+        switch (rta.rta_type) {
+            c.RTA_DST => {
+                if (data_len == 4) {
+                    const ip: *const [4]u8 = @as(*const [4]u8, @ptrCast(data.ptr));
+                    std.debug.print("  dst: {d}.{d}.{d}.{d}\n", .{ ip[0], ip[1], ip[2], ip[3] });
+                }
+            },
+            c.RTA_GATEWAY => {
+                if (data_len == 4) {
+                    const ip: *const [4]u8 = @as(*const [4]u8, @ptrCast(data.ptr));
+                    std.debug.print("  gw:  {d}.{d}.{d}.{d}\n", .{ ip[0], ip[1], ip[2], ip[3] });
+                }
+            },
+            c.RTA_OIF => {
+                if (data_len >= 4) {
+                    const ifindex = std.mem.readInt(u32, @ptrCast(data), .little);
+                    std.debug.print("  oif: {d}\n", .{ifindex});
+                }
+            },
+            else => {},
+        }
+
+        const aligned_len = (@as(usize, rta.rta_len) + attr_align - 1) & ~(@as(usize, attr_align - 1));
+        offset += aligned_len;
+    }
+}
 fn open_netlink() !i32 {
     const fd: i32 = @intCast(linux.socket(linux.AF.NETLINK, linux.SOCK.RAW, linux.NETLINK.ROUTE));
 
@@ -82,6 +125,5 @@ pub fn main() !void {
 
     do_route_dump_req(fd, kern_addr);
 
-    var buf: [8192]u8 = undefined;
-    try get_route_dump_resp(fd, &buf, @ptrCast(&kern_addr));
+    try get_route_dump_resp(fd, &kern_addr);
 }
