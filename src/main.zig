@@ -35,12 +35,18 @@ fn get_route_dump_resp(fd: i32, kern_addr: *linux.sockaddr.nl) void {
                 std.debug.print("Netlink error\n", .{});
                 return;
             } else if (hdr.nlmsg_type == c.RTM_NEWROUTE) {
-                const rtm: *const c.rtmsg = @ptrCast(@alignCast(@as(*const anyopaque, @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr)))));
-                const attr_start = @intFromPtr(rtm) + @sizeOf(c.rtmsg);
+                // offset into sizeof(c.nlmsghdr) and ptrCast
+                const rtm_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
+
+                // cast offseted into rtmsg pointer
+                const rtmsg: *const c.rtmsg = @ptrCast(@alignCast(rtm_buf_ptr));
+                const attr_start = @intFromPtr(rtmsg) + @sizeOf(c.rtmsg);
                 const attr_len = hdr.nlmsg_len - @sizeOf(c.nlmsghdr) - @sizeOf(c.rtmsg);
 
+                // index into buf using what was computed above
                 const attr_buf = buf[@intCast(attr_start - @intFromPtr(&buf))..@intCast(attr_start - @intFromPtr(&buf) + attr_len)];
 
+                // parse the attr_buf
                 parse_rtattrs(attr_buf);
             }
 
@@ -81,6 +87,7 @@ fn parse_rtattrs(buf: []const u8) void {
             else => {},
         }
 
+        // TODO: why does this work?
         const aligned_len = (@as(usize, rta.rta_len) + attr_align - 1) & ~(@as(usize, attr_align - 1));
         offset += aligned_len;
     }
