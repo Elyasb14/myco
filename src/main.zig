@@ -9,6 +9,14 @@ const nl_request = struct {
     rtm: c.rtmsg,
 };
 
+const RouteInfo = struct {
+    dst: ?[4]u8 = null,
+    gw: ?[4]u8 = null,
+    oif: ?u32 = null,
+    prefsrc: ?[4]u8 = null,
+    metric: ?u32 = null,
+};
+
 fn get_route_dump_resp(fd: i32, kern_addr: *linux.sockaddr.nl) void {
     var buf: [8192]u8 = undefined;
     var from_len: linux.socklen_t = @sizeOf(linux.sockaddr.nl);
@@ -51,7 +59,8 @@ fn get_route_dump_resp(fd: i32, kern_addr: *linux.sockaddr.nl) void {
                 const attr_buf = buf[@intCast(attr_start - @intFromPtr(&buf))..@intCast(attr_start - @intFromPtr(&buf) + attr_len)];
 
                 // parse the attribute buffer
-                parse_rtattrs(attr_buf);
+                const route_info = parse_rtattrs(attr_buf);
+                std.debug.print("ROUTE INFO: {any}\n", .{route_info});
             }
 
             offset += @intCast(c.NLMSG_ALIGN(hdr.nlmsg_len));
@@ -59,8 +68,10 @@ fn get_route_dump_resp(fd: i32, kern_addr: *linux.sockaddr.nl) void {
     }
 }
 
-fn parse_rtattrs(buf: []const u8) void {
+fn parse_rtattrs(buf: []const u8) RouteInfo {
     var offset: usize = 0;
+
+    var route = RouteInfo{};
 
     while (offset + @sizeOf(c.rtattr) <= buf.len) {
         const rta: *const c.rtattr = @ptrCast(@alignCast(&buf[offset]));
@@ -71,28 +82,31 @@ fn parse_rtattrs(buf: []const u8) void {
 
         switch (rta.rta_type) {
             c.RTA_DST => {
-                if (data_len == 4) {
-                    const ip: *const [4]u8 = @as(*const [4]u8, @ptrCast(data.ptr));
-                    std.debug.print("  dst: {d}.{d}.{d}.{d}\n", .{ ip[0], ip[1], ip[2], ip[3] });
-                }
+                if (data_len == 4)
+                    route.dst = @as(*const [4]u8, @ptrCast(data.ptr)).*;
             },
             c.RTA_GATEWAY => {
-                if (data_len == 4) {
-                    const ip: *const [4]u8 = @as(*const [4]u8, @ptrCast(data.ptr));
-                    std.debug.print("  gw:  {d}.{d}.{d}.{d}\n", .{ ip[0], ip[1], ip[2], ip[3] });
-                }
+                if (data_len == 4)
+                    route.gw = @as(*const [4]u8, @ptrCast(data.ptr)).*;
+            },
+            c.RTA_PREFSRC => {
+                if (data_len == 4)
+                    route.prefsrc = @as(*const [4]u8, @ptrCast(data.ptr)).*;
+            },
+            c.RTA_PRIORITY => {
+                if (data_len >= 4)
+                    route.metric = std.mem.readInt(u32, @ptrCast(data), .little);
             },
             c.RTA_OIF => {
-                if (data_len >= 4) {
-                    const ifindex = std.mem.readInt(u32, @ptrCast(data), .little);
-                    std.debug.print("  oif: {d}\n", .{ifindex});
-                }
+                if (data_len >= 4)
+                    route.oif = std.mem.readInt(u32, @ptrCast(data), .little);
             },
             else => {},
         }
 
         offset += @intCast(c.RTA_ALIGN(rta.rta_len));
     }
+    return route;
 }
 fn open_netlink() !i32 {
     const fd: i32 = @intCast(linux.socket(linux.AF.NETLINK, linux.SOCK.RAW, linux.NETLINK.ROUTE));
