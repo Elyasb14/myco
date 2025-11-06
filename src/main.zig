@@ -1,7 +1,9 @@
 const std = @import("std");
 const linux = std.os.linux;
 
-const c = @cImport(@cInclude("linux/rtnetlink.h"));
+const c = @cImport({
+    @cInclude("linux/rtnetlink.h");
+});
 
 const nl_request = struct {
     nlh: c.nlmsghdr,
