@@ -5,10 +5,10 @@ const c = @cImport({
     @cInclude("linux/rtnetlink.h");
 });
 
-const nl_request = struct {
-    nlh: c.nlmsghdr,
-    rtm: c.rtmsg,
-};
+/// this struct gets packed as bytes and sent over a socket
+/// be careful adding fields
+/// see usage in send_route_dump_request
+const nl_request = struct { nlh: c.nlmsghdr, rtm: c.rtmsg };
 
 const RouteInfo = struct {
     dst: ?[4]u8 = null,
@@ -17,6 +17,19 @@ const RouteInfo = struct {
     prefsrc: ?[4]u8 = null,
     metric: ?u32 = null,
 };
+
+fn add_route(fd: i32, kern_addr: linux.sockaddr.nl, info: RouteInfo) void {
+    _ = info;
+    const req = nl_request{ .nlh = .{
+        .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_NEWROUTE)),
+        .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_CREATE | c.NLM_F_EXCL,
+        .nlmsg_len = @sizeOf(nl_request),
+        .nlmsg_seq = @intCast(std.time.timestamp()),
+    }, .rtm = .{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN, .rtm_protocol = c.RTPROT_STATIC, .rtm_scope = c.RT_SCOPE_UNIVERSE, .rtm_type = c.RTN_UNICAST } };
+
+    const sent = linux.sendto(@intCast(fd), std.mem.asBytes(&req), req.nlh.nlmsg_len, 0, @ptrCast(&kern_addr), @sizeOf(@TypeOf(kern_addr)));
+    if (sent < 0) return error.SendFailed;
+}
 
 fn recv_route_dump_resp(fd: i32, kern_addr: *linux.sockaddr.nl) void {
     var buf: [8192]u8 = undefined;
@@ -69,7 +82,7 @@ fn recv_route_dump_resp(fd: i32, kern_addr: *linux.sockaddr.nl) void {
     }
 }
 
-fn parse_rtattrs(buf: []const u8) RouteInfo {
+fn parse_rtattrs(buf: []u8) RouteInfo {
     var offset: usize = 0;
 
     var route = RouteInfo{};
