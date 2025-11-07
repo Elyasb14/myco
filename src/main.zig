@@ -148,6 +148,5 @@ pub fn main() !void {
     };
 
     do_route_dump_req(fd, kern_addr);
-
     get_route_dump_resp(fd, &kern_addr);
 }
