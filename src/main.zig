@@ -18,7 +18,7 @@ const RouteInfo = struct {
     metric: ?u32 = null,
 };
 
-fn get_route_dump_resp(fd: i32, kern_addr: *linux.sockaddr.nl) void {
+fn recv_route_dump_resp(fd: i32, kern_addr: *linux.sockaddr.nl) void {
     var buf: [8192]u8 = undefined;
     var from_len: linux.socklen_t = @sizeOf(linux.sockaddr.nl);
     while (true) {
@@ -124,7 +124,10 @@ fn open_netlink() !i32 {
     return fd;
 }
 
-fn do_route_dump_req(fd: i32, kern_addr: linux.sockaddr.nl) void {
+/// sendto takes ?*const sockaddr
+/// recvfrom takes ?* sockaddr
+/// this is why we pass by value not by pointer
+fn send_route_dump_req(fd: i32, kern_addr: linux.sockaddr.nl) !void {
     const req = nl_request{ .nlh = .{
         .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_GETROUTE)),
         .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_DUMP,
@@ -147,6 +150,6 @@ pub fn main() !void {
         .groups = 0,
     };
 
-    do_route_dump_req(fd, kern_addr);
-    get_route_dump_resp(fd, &kern_addr);
+    try send_route_dump_req(fd, kern_addr);
+    recv_route_dump_resp(fd, &kern_addr);
 }
