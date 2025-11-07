@@ -18,7 +18,7 @@ const RouteInfo = struct {
     metric: ?u32 = null,
 };
 
-fn add_route(fd: i32, kern_addr: linux.sockaddr.nl, info: RouteInfo) void {
+fn add_route(fd: i32, kern_addr: linux.sockaddr.nl, info: RouteInfo) !void {
     _ = info;
     const req = nl_request{ .nlh = .{
         .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_NEWROUTE)),
@@ -157,12 +157,14 @@ pub fn main() !void {
     defer _ = linux.close(@intCast(fd));
 
     // TODO: why is this var and addr is const
-    var kern_addr = linux.sockaddr.nl{
+    const kern_addr = linux.sockaddr.nl{
         .family = linux.AF.NETLINK,
         .pid = 0, // destination: kernel
         .groups = 0,
     };
 
-    try send_route_dump_req(fd, kern_addr);
-    recv_route_dump_resp(fd, &kern_addr);
+    // try send_route_dump_req(fd, kern_addr);
+    // recv_route_dump_resp(fd, &kern_addr);
+    const route_info = RouteInfo{};
+    try add_route(fd, kern_addr, route_info);
 }
