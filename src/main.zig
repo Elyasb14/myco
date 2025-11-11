@@ -8,8 +8,6 @@ const c = @cImport({
 /// this struct gets packed as bytes and sent over a socket
 /// be careful adding fields
 /// see usage in send_route_dump_request
-const nl_request = struct { nlh: c.nlmsghdr, rtm: c.rtmsg };
-
 const RouteInfo = struct {
     dst: ?[4]u8 = null,
     gw: ?[4]u8 = null,
@@ -124,6 +122,7 @@ fn open_netlink() !i32 {
     return fd;
 }
 
+const nl_request = struct { nlh: c.nlmsghdr, rtm: c.rtmsg, rtattr: ?[]c.rtattr = null };
 fn send_route_add_req(fd: i32, kern_addr: linux.sockaddr.nl, info: RouteInfo) !void {
     _ = info;
     const req = nl_request{ .nlh = .{
@@ -141,14 +140,17 @@ fn send_route_add_req(fd: i32, kern_addr: linux.sockaddr.nl, info: RouteInfo) !v
 /// recvfrom takes ?* sockaddr
 /// this is why we pass by value not by pointer
 fn send_route_dump_req(fd: i32, kern_addr: linux.sockaddr.nl) !void {
-    const req = nl_request{ .nlh = .{
+    const nlh = c.nlmsghdr{
         .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_GETROUTE)),
         .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_DUMP,
-        .nlmsg_len = @sizeOf(nl_request),
+        .nlmsg_len = @sizeOf(nl_request), //TODO: need to get rid of this calculation to get rid of the nl_request struct
         .nlmsg_seq = @intCast(std.time.timestamp()),
-    }, .rtm = .{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN } };
+    };
+    const rtm = c.rtmsg{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN };
 
-    const sent = linux.sendto(@intCast(fd), std.mem.asBytes(&req), req.nlh.nlmsg_len, 0, @ptrCast(&kern_addr), @sizeOf(@TypeOf(kern_addr)));
+    const req = std.mem.asBytes(&nlh) ++ std.mem.asBytes(&rtm);
+
+    const sent = linux.sendto(@intCast(fd), req, nlh.nlmsg_len, 0, @ptrCast(&kern_addr), @sizeOf(@TypeOf(kern_addr)));
     if (sent < 0) return error.SendFailed;
 }
 
@@ -157,14 +159,14 @@ pub fn main() !void {
     defer _ = linux.close(@intCast(fd));
 
     // TODO: why is this var and addr is const
-    const kern_addr = linux.sockaddr.nl{
+    var kern_addr = linux.sockaddr.nl{
         .family = linux.AF.NETLINK,
         .pid = 0, // destination: kernel
         .groups = 0,
     };
 
-    // try send_route_dump_req(fd, kern_addr);
-    // recv_route_dump_resp(fd, &kern_addr);
-    const route_info = RouteInfo{};
-    try send_route_add_req(fd, kern_addr, route_info);
+    try send_route_dump_req(fd, kern_addr);
+    recv_route_dump_resp(fd, &kern_addr);
+    // const route_info = RouteInfo{};
+    // try send_route_add_req(fd, kern_addr, route_info);
 }
