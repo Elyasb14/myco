@@ -18,19 +18,6 @@ const RouteInfo = struct {
     metric: ?u32 = null,
 };
 
-fn add_route(fd: i32, kern_addr: linux.sockaddr.nl, info: RouteInfo) !void {
-    _ = info;
-    const req = nl_request{ .nlh = .{
-        .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_NEWROUTE)),
-        .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_CREATE | c.NLM_F_EXCL,
-        .nlmsg_len = @sizeOf(nl_request),
-        .nlmsg_seq = @intCast(std.time.timestamp()),
-    }, .rtm = .{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN, .rtm_protocol = c.RTPROT_STATIC, .rtm_scope = c.RT_SCOPE_UNIVERSE, .rtm_type = c.RTN_UNICAST } };
-
-    const sent = linux.sendto(@intCast(fd), std.mem.asBytes(&req), req.nlh.nlmsg_len, 0, @ptrCast(&kern_addr), @sizeOf(@TypeOf(kern_addr)));
-    if (sent < 0) return error.SendFailed;
-}
-
 fn recv_route_dump_resp(fd: i32, kern_addr: *linux.sockaddr.nl) void {
     var buf: [8192]u8 = undefined;
     var from_len: linux.socklen_t = @sizeOf(linux.sockaddr.nl);
@@ -137,6 +124,19 @@ fn open_netlink() !i32 {
     return fd;
 }
 
+fn send_route_add_req(fd: i32, kern_addr: linux.sockaddr.nl, info: RouteInfo) !void {
+    _ = info;
+    const req = nl_request{ .nlh = .{
+        .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_NEWROUTE)),
+        .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_CREATE | c.NLM_F_EXCL,
+        .nlmsg_len = @sizeOf(nl_request),
+        .nlmsg_seq = @intCast(std.time.timestamp()),
+    }, .rtm = .{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN, .rtm_protocol = c.RTPROT_STATIC, .rtm_scope = c.RT_SCOPE_UNIVERSE, .rtm_type = c.RTN_UNICAST } };
+
+    const sent = linux.sendto(@intCast(fd), std.mem.asBytes(&req), req.nlh.nlmsg_len, 0, @ptrCast(&kern_addr), @sizeOf(@TypeOf(kern_addr)));
+    if (sent < 0) return error.SendFailed;
+}
+
 /// sendto takes ?*const sockaddr
 /// recvfrom takes ?* sockaddr
 /// this is why we pass by value not by pointer
@@ -166,5 +166,5 @@ pub fn main() !void {
     // try send_route_dump_req(fd, kern_addr);
     // recv_route_dump_resp(fd, &kern_addr);
     const route_info = RouteInfo{};
-    try add_route(fd, kern_addr, route_info);
+    try send_route_add_req(fd, kern_addr, route_info);
 }
