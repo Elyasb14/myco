@@ -1,5 +1,5 @@
 const std = @import("std");
-const nl = @import("netlink.zig");
+const nl = @import("netlink/route.zig");
 const linux = std.os.linux;
 
 pub fn main() !void {
