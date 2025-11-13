@@ -26,7 +26,6 @@ pub fn recv_route_dump_resp(fd: i32, kern_addr: *linux.sockaddr.nl) !void {
             const hdr: *const c.nlmsghdr = @ptrCast(@alignCast(&buf[offset]));
 
             if (hdr.nlmsg_type == c.NLMSG_DONE) {
-                std.debug.print("End of dump\n", .{});
                 return;
             } else if (hdr.nlmsg_type == c.NLMSG_ERROR) {
                 std.debug.print("Netlink error\n", .{});
