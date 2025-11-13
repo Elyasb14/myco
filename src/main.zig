@@ -187,15 +187,21 @@ pub fn main() !void {
     defer _ = linux.close(@intCast(fd));
 
     // TODO: why is this var and addr is const
-    var kern_addr = linux.sockaddr.nl{
+    const kern_addr = linux.sockaddr.nl{
         .family = linux.AF.NETLINK,
         .pid = 0, // destination: kernel
         .groups = 0,
     };
 
-    const route_info = RouteInfo{ .dst = .{ 192, 168, 2, 1 } };
+    const route_info = RouteInfo{
+        .dst = .{ 8, 8, 8, 8 },
+        .gw = .{ 10, 225, 139, 1 },
+        .oif = 2,
+        .metric = 100,
+    };
+
     try send_route_add_req(fd, kern_addr, route_info);
 
-    try send_route_dump_req(fd, kern_addr);
-    recv_route_dump_resp(fd, &kern_addr);
+    // try send_route_dump_req(fd, kern_addr);
+    // recv_route_dump_resp(fd, &kern_addr);
 }
