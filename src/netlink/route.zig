@@ -1,3 +1,5 @@
+//! netlink wrapper for viewing/modifying the routing table
+
 const std = @import("std");
 const linux = std.os.linux;
 const core = @import("core.zig");
@@ -14,11 +16,34 @@ pub const RouteInfo = struct {
     metric: ?u32 = null,
 };
 
-pub fn recv_route_dump_resp(fd: i32, kern_addr: *linux.sockaddr.nl) !void {
+pub const NetlinkSocket = struct {
+    sock: i32,
+
+    pub fn open() !NetlinkSocket {
+        const sock: i32 = @intCast(linux.socket(linux.AF.NETLINK, linux.SOCK.RAW, linux.NETLINK.ROUTE));
+
+        const addr: linux.sockaddr.nl = .{
+            .family = linux.AF.NETLINK,
+            .pid = @intCast(linux.getpid()),
+            .groups = 0,
+        };
+
+        if (linux.bind(@intCast(sock), @ptrCast(&addr), @sizeOf(@TypeOf(addr))) < 0) {
+            return error.CantBind;
+        }
+        return NetlinkSocket{ .sock = sock };
+    }
+
+    pub fn close(sock: NetlinkSocket) void {
+        _ = linux.close(@intCast(sock.sock));
+    }
+};
+
+pub fn recv_route_dump_resp(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
     var buf: [8192]u8 = undefined;
 
     while (true) {
-        const len = try core.recv(fd, &buf, kern_addr);
+        const len = try core.recv(sock, &buf, kern_addr);
         if (len == 0) break;
 
         var offset: usize = 0;
@@ -97,22 +122,7 @@ pub fn parse_rtattrs(buf: []u8) RouteInfo {
     return route;
 }
 
-pub fn open_netlink() !i32 {
-    const fd: i32 = @intCast(linux.socket(linux.AF.NETLINK, linux.SOCK.RAW, linux.NETLINK.ROUTE));
-
-    const addr: linux.sockaddr.nl = .{
-        .family = linux.AF.NETLINK,
-        .pid = @intCast(linux.getpid()),
-        .groups = 0,
-    };
-
-    if (linux.bind(@intCast(fd), @ptrCast(&addr), @sizeOf(@TypeOf(addr))) < 0) {
-        return error.CantBind;
-    }
-    return fd;
-}
-
-pub fn send_route_del_req(fd: i32, kern_addr: *linux.sockaddr.nl, info: RouteInfo) !void {
+pub fn send_route_del_req(sock: i32, kern_addr: *linux.sockaddr.nl, info: RouteInfo) !void {
     var offset: usize = 0;
     var buf: [512]u8 = undefined;
 
@@ -140,10 +150,10 @@ pub fn send_route_del_req(fd: i32, kern_addr: *linux.sockaddr.nl, info: RouteInf
     nlh.nlmsg_len = @intCast(offset);
     @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
-    try core.send(@intCast(fd), &buf, @ptrCast(kern_addr));
+    try core.send(@intCast(sock), &buf, @ptrCast(kern_addr));
 }
 
-pub fn send_route_add_req(fd: i32, kern_addr: *linux.sockaddr.nl, info: RouteInfo) !void {
+pub fn send_route_add_req(sock: i32, kern_addr: *linux.sockaddr.nl, info: RouteInfo) !void {
     var offset: usize = 0;
     var buf: [512]u8 = undefined;
 
@@ -171,7 +181,7 @@ pub fn send_route_add_req(fd: i32, kern_addr: *linux.sockaddr.nl, info: RouteInf
     nlh.nlmsg_len = @intCast(offset);
     @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
-    try core.send(@intCast(fd), &buf, @ptrCast(kern_addr));
+    try core.send(@intCast(sock), &buf, @ptrCast(kern_addr));
 }
 
 fn add_rtattr(buf: []u8, offset: *usize, rta_type: c_ushort, data: []const u8) void {
@@ -190,7 +200,7 @@ fn add_rtattr(buf: []u8, offset: *usize, rta_type: c_ushort, data: []const u8) v
     offset.* = std.mem.alignForward(usize, offset.*, 4);
 }
 
-pub fn send_route_dump_req(fd: i32, kern_addr: *linux.sockaddr.nl) !void {
+pub fn send_route_dump_req(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
     var buf: [@sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg)]u8 = undefined;
     var offset: usize = 0;
 
@@ -209,5 +219,5 @@ pub fn send_route_dump_req(fd: i32, kern_addr: *linux.sockaddr.nl) !void {
     @memcpy(buf[offset .. offset + @sizeOf(c.rtmsg)], std.mem.asBytes(&rtm));
     offset += @sizeOf(c.rtmsg);
 
-    try core.send(@intCast(fd), &buf, @ptrCast(kern_addr));
+    try core.send(@intCast(sock), &buf, @ptrCast(kern_addr));
 }
