@@ -122,17 +122,37 @@ fn open_netlink() !i32 {
     return fd;
 }
 
-const nl_request = struct { nlh: c.nlmsghdr, rtm: c.rtmsg, rtattr: ?[]c.rtattr = null };
 fn send_route_add_req(fd: i32, kern_addr: linux.sockaddr.nl, info: RouteInfo) !void {
-    _ = info;
-    const req = nl_request{ .nlh = .{
+    var offset: usize = 0;
+    var buf: [@sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg) + @sizeOf(c.rtattr) + @sizeOf([4]u8)]u8 = undefined;
+
+    const nlh = c.nlmsghdr{
         .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_NEWROUTE)),
         .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_CREATE | c.NLM_F_EXCL,
-        .nlmsg_len = @sizeOf(nl_request),
+        .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg),
         .nlmsg_seq = @intCast(std.time.timestamp()),
-    }, .rtm = .{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN, .rtm_protocol = c.RTPROT_STATIC, .rtm_scope = c.RT_SCOPE_UNIVERSE, .rtm_type = c.RTN_UNICAST } };
+    };
+    const rtm = c.rtmsg{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN, .rtm_protocol = c.RTPROT_STATIC, .rtm_scope = c.RT_SCOPE_UNIVERSE, .rtm_type = c.RTN_UNICAST };
+    const rta = c.rtattr{
+        .rta_type = c.RTA_DST,
+        .rta_len = @sizeOf(c.rtattr) + 4, // IPv4 addr
+    };
 
-    const sent = linux.sendto(@intCast(fd), std.mem.asBytes(&req), req.nlh.nlmsg_len, 0, @ptrCast(&kern_addr), @sizeOf(@TypeOf(kern_addr)));
+    @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+    offset += @sizeOf(c.nlmsghdr);
+
+    @memcpy(buf[offset .. offset + @sizeOf(c.rtmsg)], std.mem.asBytes(&rtm));
+    offset += @sizeOf(c.rtmsg);
+
+    @memcpy(buf[offset .. offset + @sizeOf(c.rtattr)], std.mem.asBytes(&rta));
+    offset += @sizeOf(c.rtattr);
+
+    if (info.dst) |dst| {
+        @memcpy(buf[offset .. offset + dst.len], std.mem.asBytes(&dst));
+        offset += dst.len;
+    }
+
+    const sent = linux.sendto(@intCast(fd), &buf, buf.len, 0, @ptrCast(&kern_addr), @sizeOf(@TypeOf(kern_addr)));
     if (sent < 0) return error.SendFailed;
 }
 
@@ -140,17 +160,25 @@ fn send_route_add_req(fd: i32, kern_addr: linux.sockaddr.nl, info: RouteInfo) !v
 /// recvfrom takes ?* sockaddr
 /// this is why we pass by value not by pointer
 fn send_route_dump_req(fd: i32, kern_addr: linux.sockaddr.nl) !void {
+    var buf: [@sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg)]u8 = undefined;
+    var offset: usize = 0;
+
     const nlh = c.nlmsghdr{
         .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_GETROUTE)),
         .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_DUMP,
-        .nlmsg_len = @sizeOf(nl_request), //TODO: need to get rid of this calculation to get rid of the nl_request struct
+        .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg),
         .nlmsg_seq = @intCast(std.time.timestamp()),
+        .nlmsg_pid = 0,
     };
     const rtm = c.rtmsg{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN };
 
-    const req = std.mem.asBytes(&nlh) ++ std.mem.asBytes(&rtm);
+    @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+    offset += @sizeOf(c.nlmsghdr);
 
-    const sent = linux.sendto(@intCast(fd), req, nlh.nlmsg_len, 0, @ptrCast(&kern_addr), @sizeOf(@TypeOf(kern_addr)));
+    @memcpy(buf[offset .. offset + @sizeOf(c.rtmsg)], std.mem.asBytes(&rtm));
+    offset += @sizeOf(c.rtmsg);
+
+    const sent = linux.sendto(@intCast(fd), &buf, buf.len, 0, @ptrCast(&kern_addr), @sizeOf(@TypeOf(kern_addr)));
     if (sent < 0) return error.SendFailed;
 }
 
@@ -165,8 +193,9 @@ pub fn main() !void {
         .groups = 0,
     };
 
+    const route_info = RouteInfo{ .dst = .{ 192, 168, 2, 1 } };
+    try send_route_add_req(fd, kern_addr, route_info);
+
     try send_route_dump_req(fd, kern_addr);
     recv_route_dump_resp(fd, &kern_addr);
-    // const route_info = RouteInfo{};
-    // try send_route_add_req(fd, kern_addr, route_info);
 }
