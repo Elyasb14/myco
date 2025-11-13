@@ -3,14 +3,8 @@ const nl = @import("netlink/route.zig");
 const linux = std.os.linux;
 
 pub fn main() !void {
-    const sock = try nl.NetlinkSocket.open();
-    defer sock.close();
-
-    var kern_addr = linux.sockaddr.nl{
-        .family = linux.AF.NETLINK,
-        .pid = 0, // destination: kernel
-        .groups = 0,
-    };
+    const nl_sock = try nl.NetlinkSocket.open();
+    defer nl_sock.close();
 
     const route_info = nl.RouteInfo{
         .dst = .{ 1, 1, 1, 2 },
@@ -19,13 +13,11 @@ pub fn main() !void {
         .metric = 100,
     };
 
-    try nl.send_route_add_req(sock.sock, &kern_addr, route_info);
+    try nl_sock.add_route(route_info);
 
-    try nl.send_route_dump_req(sock.sock, &kern_addr);
-    try nl.recv_route_dump_resp(sock.sock, &kern_addr);
+    try nl_sock.dump_routing_table();
 
-    try nl.send_route_del_req(sock.sock, &kern_addr, route_info);
+    try nl_sock.del_route(route_info);
 
-    try nl.send_route_dump_req(sock.sock, &kern_addr);
-    try nl.recv_route_dump_resp(sock.sock, &kern_addr);
+    try nl_sock.dump_routing_table();
 }

@@ -18,6 +18,11 @@ pub const RouteInfo = struct {
 
 pub const NetlinkSocket = struct {
     sock: i32,
+    var kern_addr = linux.sockaddr.nl{
+        .family = linux.AF.NETLINK,
+        .pid = 0, // destination: kernel
+        .groups = 0,
+    };
 
     pub fn open() !NetlinkSocket {
         const sock: i32 = @intCast(linux.socket(linux.AF.NETLINK, linux.SOCK.RAW, linux.NETLINK.ROUTE));
@@ -37,9 +42,94 @@ pub const NetlinkSocket = struct {
     pub fn close(sock: NetlinkSocket) void {
         _ = linux.close(@intCast(sock.sock));
     }
+
+    pub fn add_route(nl_sock: NetlinkSocket, info: RouteInfo) !void {
+        var offset: usize = 0;
+        var buf: [512]u8 = undefined;
+
+        var nlh = c.nlmsghdr{
+            .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_NEWROUTE)),
+            .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_CREATE | c.NLM_F_EXCL,
+            .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg),
+            .nlmsg_seq = @intCast(std.time.timestamp()),
+        };
+        const rtm = c.rtmsg{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN, .rtm_protocol = c.RTPROT_STATIC, .rtm_scope = c.RT_SCOPE_UNIVERSE, .rtm_type = c.RTN_UNICAST, .rtm_dst_len = 32 };
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+        offset += @sizeOf(c.nlmsghdr);
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.rtmsg)], std.mem.asBytes(&rtm));
+        offset += @sizeOf(c.rtmsg);
+
+        if (info.dst) |dst| add_rtattr(&buf, &offset, c.RTA_DST, std.mem.asBytes(&dst));
+        if (info.gw) |gw| add_rtattr(&buf, &offset, c.RTA_GATEWAY, std.mem.asBytes(&gw));
+        if (info.oif) |oif| add_rtattr(&buf, &offset, c.RTA_OIF, std.mem.asBytes(&oif));
+        if (info.metric) |metric| add_rtattr(&buf, &offset, c.RTA_PRIORITY, std.mem.asBytes(&metric));
+
+        // need to do this because the memcpy above was just a dummy header to reserver space
+        // this gives the real size
+        nlh.nlmsg_len = @intCast(offset);
+        @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+
+        try core.send(@intCast(nl_sock.sock), &buf, @ptrCast(&kern_addr));
+    }
+
+    pub fn del_route(nl_sock: NetlinkSocket, info: RouteInfo) !void {
+        var offset: usize = 0;
+        var buf: [512]u8 = undefined;
+
+        var nlh = c.nlmsghdr{
+            .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_DELROUTE)),
+            .nlmsg_flags = c.NLM_F_REQUEST,
+            .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg),
+            .nlmsg_seq = @intCast(std.time.timestamp()),
+        };
+        const rtm = c.rtmsg{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN, .rtm_protocol = c.RTPROT_STATIC, .rtm_scope = c.RT_SCOPE_UNIVERSE, .rtm_type = c.RTN_UNICAST, .rtm_dst_len = 32 };
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+        offset += @sizeOf(c.nlmsghdr);
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.rtmsg)], std.mem.asBytes(&rtm));
+        offset += @sizeOf(c.rtmsg);
+
+        if (info.dst) |dst| add_rtattr(&buf, &offset, c.RTA_DST, std.mem.asBytes(&dst));
+        if (info.gw) |gw| add_rtattr(&buf, &offset, c.RTA_GATEWAY, std.mem.asBytes(&gw));
+        if (info.oif) |oif| add_rtattr(&buf, &offset, c.RTA_OIF, std.mem.asBytes(&oif));
+        if (info.metric) |metric| add_rtattr(&buf, &offset, c.RTA_PRIORITY, std.mem.asBytes(&metric));
+
+        // need to do this because the memcpy above was just a dummy header to reserver space
+        // this gives the real size
+        nlh.nlmsg_len = @intCast(offset);
+        @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+
+        try core.send(@intCast(nl_sock.sock), &buf, @ptrCast(&kern_addr));
+    }
+
+    pub fn dump_routing_table(nl_sock: NetlinkSocket) !void {
+        var buf: [@sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg)]u8 = undefined;
+        var offset: usize = 0;
+
+        const nlh = c.nlmsghdr{
+            .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_GETROUTE)),
+            .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_DUMP,
+            .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg),
+            .nlmsg_seq = @intCast(std.time.timestamp()),
+            .nlmsg_pid = 0,
+        };
+        const rtm = c.rtmsg{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN };
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+        offset += @sizeOf(c.nlmsghdr);
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.rtmsg)], std.mem.asBytes(&rtm));
+        offset += @sizeOf(c.rtmsg);
+
+        try core.send(@intCast(nl_sock.sock), &buf, @ptrCast(&kern_addr));
+        try recv_route_dump_resp(nl_sock.sock, &kern_addr);
+    }
 };
 
-pub fn recv_route_dump_resp(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
+fn recv_route_dump_resp(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
     var buf: [8192]u8 = undefined;
 
     while (true) {
@@ -81,7 +171,7 @@ pub fn recv_route_dump_resp(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
     }
 }
 
-pub fn parse_rtattrs(buf: []u8) RouteInfo {
+fn parse_rtattrs(buf: []u8) RouteInfo {
     var offset: usize = 0;
 
     var route = RouteInfo{};
@@ -122,68 +212,6 @@ pub fn parse_rtattrs(buf: []u8) RouteInfo {
     return route;
 }
 
-pub fn send_route_del_req(sock: i32, kern_addr: *linux.sockaddr.nl, info: RouteInfo) !void {
-    var offset: usize = 0;
-    var buf: [512]u8 = undefined;
-
-    var nlh = c.nlmsghdr{
-        .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_DELROUTE)),
-        .nlmsg_flags = c.NLM_F_REQUEST,
-        .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg),
-        .nlmsg_seq = @intCast(std.time.timestamp()),
-    };
-    const rtm = c.rtmsg{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN, .rtm_protocol = c.RTPROT_STATIC, .rtm_scope = c.RT_SCOPE_UNIVERSE, .rtm_type = c.RTN_UNICAST, .rtm_dst_len = 32 };
-
-    @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
-    offset += @sizeOf(c.nlmsghdr);
-
-    @memcpy(buf[offset .. offset + @sizeOf(c.rtmsg)], std.mem.asBytes(&rtm));
-    offset += @sizeOf(c.rtmsg);
-
-    if (info.dst) |dst| add_rtattr(&buf, &offset, c.RTA_DST, std.mem.asBytes(&dst));
-    if (info.gw) |gw| add_rtattr(&buf, &offset, c.RTA_GATEWAY, std.mem.asBytes(&gw));
-    if (info.oif) |oif| add_rtattr(&buf, &offset, c.RTA_OIF, std.mem.asBytes(&oif));
-    if (info.metric) |metric| add_rtattr(&buf, &offset, c.RTA_PRIORITY, std.mem.asBytes(&metric));
-
-    // need to do this because the memcpy above was just a dummy header to reserver space
-    // this gives the real size
-    nlh.nlmsg_len = @intCast(offset);
-    @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
-
-    try core.send(@intCast(sock), &buf, @ptrCast(kern_addr));
-}
-
-pub fn send_route_add_req(sock: i32, kern_addr: *linux.sockaddr.nl, info: RouteInfo) !void {
-    var offset: usize = 0;
-    var buf: [512]u8 = undefined;
-
-    var nlh = c.nlmsghdr{
-        .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_NEWROUTE)),
-        .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_CREATE | c.NLM_F_EXCL,
-        .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg),
-        .nlmsg_seq = @intCast(std.time.timestamp()),
-    };
-    const rtm = c.rtmsg{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN, .rtm_protocol = c.RTPROT_STATIC, .rtm_scope = c.RT_SCOPE_UNIVERSE, .rtm_type = c.RTN_UNICAST, .rtm_dst_len = 32 };
-
-    @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
-    offset += @sizeOf(c.nlmsghdr);
-
-    @memcpy(buf[offset .. offset + @sizeOf(c.rtmsg)], std.mem.asBytes(&rtm));
-    offset += @sizeOf(c.rtmsg);
-
-    if (info.dst) |dst| add_rtattr(&buf, &offset, c.RTA_DST, std.mem.asBytes(&dst));
-    if (info.gw) |gw| add_rtattr(&buf, &offset, c.RTA_GATEWAY, std.mem.asBytes(&gw));
-    if (info.oif) |oif| add_rtattr(&buf, &offset, c.RTA_OIF, std.mem.asBytes(&oif));
-    if (info.metric) |metric| add_rtattr(&buf, &offset, c.RTA_PRIORITY, std.mem.asBytes(&metric));
-
-    // need to do this because the memcpy above was just a dummy header to reserver space
-    // this gives the real size
-    nlh.nlmsg_len = @intCast(offset);
-    @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
-
-    try core.send(@intCast(sock), &buf, @ptrCast(kern_addr));
-}
-
 fn add_rtattr(buf: []u8, offset: *usize, rta_type: c_ushort, data: []const u8) void {
     const rta = c.rtattr{
         .rta_type = rta_type,
@@ -198,26 +226,4 @@ fn add_rtattr(buf: []u8, offset: *usize, rta_type: c_ushort, data: []const u8) v
 
     // TODO: do we need to do this?
     offset.* = std.mem.alignForward(usize, offset.*, 4);
-}
-
-pub fn send_route_dump_req(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
-    var buf: [@sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg)]u8 = undefined;
-    var offset: usize = 0;
-
-    const nlh = c.nlmsghdr{
-        .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_GETROUTE)),
-        .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_DUMP,
-        .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg),
-        .nlmsg_seq = @intCast(std.time.timestamp()),
-        .nlmsg_pid = 0,
-    };
-    const rtm = c.rtmsg{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN };
-
-    @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
-    offset += @sizeOf(c.nlmsghdr);
-
-    @memcpy(buf[offset .. offset + @sizeOf(c.rtmsg)], std.mem.asBytes(&rtm));
-    offset += @sizeOf(c.rtmsg);
-
-    try core.send(@intCast(sock), &buf, @ptrCast(kern_addr));
 }
