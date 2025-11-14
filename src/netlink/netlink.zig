@@ -1,4 +1,4 @@
-//! netlink wrapper for viewing/modifying the routing table
+//! simplified netlink api
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -157,11 +157,11 @@ fn recv_ack(sock: i32, kern_addr: *linux.sockaddr.nl) !NetLinkAckResp {
                 const err_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
                 const err_ptr: *const NlMsgErr = @ptrCast(@alignCast(err_buf_ptr));
 
-                std.debug.print("ERROR: {any}\n", .{err_ptr});
                 if (err_ptr.@"error" == 0) return NetLinkAckResp.SUCCESS;
                 if (err_ptr.@"error" == -3) return NetLinkAckResp.ROUTE_NO_EXIST;
                 if (err_ptr.@"error" == -17) return NetLinkAckResp.EXISTS;
 
+                std.debug.print("ERROR: {any}\n", .{err_ptr});
                 return error.UnknownNetlinkError;
             },
             c.NLMSG_DONE => return .SUCCESS,
@@ -189,11 +189,13 @@ fn recv_route_dump(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
             } else if (hdr.nlmsg_type == c.NLMSG_ERROR) {
                 const err_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
                 const err_ptr: *const NlMsgErr = @ptrCast(@alignCast(err_buf_ptr));
-                _ = err_ptr;
 
-                // std.debug.print("ERROR: {any}\n", .{err_ptr});
+                if (err_ptr.@"error" == 0) return error.SUCCESS;
+                if (err_ptr.@"error" == -3) return error.ROUTE_NO_EXIST;
+                if (err_ptr.@"error" == -17) return error.EXISTS;
 
-                return error.NetlinkError;
+                std.debug.print("ERROR: {any}\n", .{err_ptr});
+                return error.UnknownNetlinkError;
             } else if (hdr.nlmsg_type == c.RTM_NEWROUTE) {
                 // get address immediately after the nlmsghdr
                 // need to cast to *anyopaque because @ptrFromInt produces a typeless pointer (same as void * in C)
