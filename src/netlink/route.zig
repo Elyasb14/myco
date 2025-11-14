@@ -8,6 +8,12 @@ const c = @cImport({
     @cInclude("linux/rtnetlink.h");
 });
 
+pub const NetLinkAckResp = enum(u8) { SUCCESS = 0, ROUTE_NO_EXIST = 3, EXISTS = 17 };
+const NlMsgErr = extern struct {
+    @"error": i32,
+    msg: c.nlmsghdr,
+};
+
 pub const RouteInfo = struct {
     dst: ?[4]u8 = null,
     gw: ?[4]u8 = null,
@@ -51,7 +57,7 @@ pub const NetlinkSocket = struct {
 
         var nlh = c.nlmsghdr{
             .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_NEWROUTE)),
-            .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_CREATE | c.NLM_F_EXCL,
+            .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_CREATE | c.NLM_F_ACK,
             .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg),
             .nlmsg_seq = @intCast(std.time.timestamp()),
         };
@@ -73,9 +79,9 @@ pub const NetlinkSocket = struct {
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
-        try core.send(@intCast(nl_sock.sock), &buf, @ptrCast(&kern_addr));
-
-        try recv_ack_ker(nl_sock.sock, &kern_addr);
+        try core.send(@intCast(nl_sock.sock), buf[0..offset], @ptrCast(&kern_addr));
+        const resp = try recv_ack(nl_sock.sock, &kern_addr);
+        _ = resp;
     }
 
     /// need to add proper error handling here for when we delete a route we don't need to delete
@@ -85,7 +91,7 @@ pub const NetlinkSocket = struct {
 
         var nlh = c.nlmsghdr{
             .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_DELROUTE)),
-            .nlmsg_flags = c.NLM_F_REQUEST,
+            .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_ACK,
             .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg),
             .nlmsg_seq = @intCast(std.time.timestamp()),
         };
@@ -107,8 +113,9 @@ pub const NetlinkSocket = struct {
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
-        try core.send(@intCast(nl_sock.sock), &buf, @ptrCast(&kern_addr));
-        try recv_ack_ker(nl_sock.sock, &kern_addr);
+        try core.send(@intCast(nl_sock.sock), buf[0..offset], @ptrCast(&kern_addr));
+        const resp = try recv_ack(nl_sock.sock, &kern_addr);
+        _ = resp;
     }
 
     pub fn dump_routing_table(nl_sock: NetlinkSocket) !void {
@@ -130,13 +137,32 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[offset .. offset + @sizeOf(c.rtmsg)], std.mem.asBytes(&rtm));
         offset += @sizeOf(c.rtmsg);
 
-        try core.send(@intCast(nl_sock.sock), &buf, @ptrCast(&kern_addr));
-
-        try recv_ack_ker(nl_sock.sock, &kern_addr);
+        try core.send(@intCast(nl_sock.sock), buf[0..offset], @ptrCast(&kern_addr));
+        try recv_route_dump(nl_sock.sock, &kern_addr);
     }
 };
 
-fn recv_ack_ker(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
+fn recv_ack(sock: i32, kern_addr: *linux.sockaddr.nl) !NetLinkAckResp {
+    var buf: [8192]u8 = undefined;
+    const len = try core.recv(sock, &buf, kern_addr);
+    if (len == 0) return error.NoData;
+
+    const hdr: *const c.nlmsghdr = @ptrCast(@alignCast(&buf));
+
+    if (hdr.nlmsg_type == c.NLMSG_ERROR) {
+        const err_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
+        const err_ptr: *const NlMsgErr = @ptrCast(@alignCast(err_buf_ptr));
+
+        std.debug.print("ERROR: {any}\n", .{err_ptr});
+        if (err_ptr.@"error" == 0) return NetLinkAckResp.SUCCESS;
+        if (err_ptr.@"error" == -3) return NetLinkAckResp.ROUTE_NO_EXIST;
+        if (err_ptr.@"error" == -17) return NetLinkAckResp.EXISTS;
+
+        return error.UnknownNetlinkError;
+    } else return error.Unexpected;
+}
+
+fn recv_route_dump(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
     var buf: [8192]u8 = undefined;
 
     while (true) {
@@ -150,9 +176,12 @@ fn recv_ack_ker(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
             if (hdr.nlmsg_type == c.NLMSG_DONE) {
                 return;
             } else if (hdr.nlmsg_type == c.NLMSG_ERROR) {
-                const err_ptr_start = @intFromPtr(hdr) + @sizeOf(c.nlmsghdr);
-                const err_ptr: *const c.nlmsgerr = @ptrFromInt(err_ptr_start);
-                if (std.posix.errno(err_ptr.@"error") == .SUCCESS) return;
+                const err_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
+                const err_ptr: *const NlMsgErr = @ptrCast(@alignCast(err_buf_ptr));
+                _ = err_ptr;
+
+                // std.debug.print("ERROR: {any}\n", .{err_ptr});
+
                 return error.NetlinkError;
             } else if (hdr.nlmsg_type == c.RTM_NEWROUTE) {
                 // get address immediately after the nlmsghdr

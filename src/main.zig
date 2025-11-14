@@ -15,6 +15,7 @@ pub fn main() !void {
 
     try nl_sock.add_route(route_info);
     try nl_sock.dump_routing_table();
-    // try nl_sock.del_route(route_info);
-    // try nl_sock.dump_routing_table();
+
+    try nl_sock.del_route(route_info);
+    try nl_sock.dump_routing_table();
 }
