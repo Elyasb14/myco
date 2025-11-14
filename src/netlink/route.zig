@@ -147,19 +147,30 @@ fn recv_ack(sock: i32, kern_addr: *linux.sockaddr.nl) !NetLinkAckResp {
     const len = try core.recv(sock, &buf, kern_addr);
     if (len == 0) return error.NoData;
 
-    const hdr: *const c.nlmsghdr = @ptrCast(@alignCast(&buf));
+    var offset: usize = 0;
 
-    if (hdr.nlmsg_type == c.NLMSG_ERROR) {
-        const err_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
-        const err_ptr: *const NlMsgErr = @ptrCast(@alignCast(err_buf_ptr));
+    while (offset < len) {
+        const hdr: *const c.nlmsghdr = @ptrCast(@alignCast(&buf));
 
-        std.debug.print("ERROR: {any}\n", .{err_ptr});
-        if (err_ptr.@"error" == 0) return NetLinkAckResp.SUCCESS;
-        if (err_ptr.@"error" == -3) return NetLinkAckResp.ROUTE_NO_EXIST;
-        if (err_ptr.@"error" == -17) return NetLinkAckResp.EXISTS;
+        switch (hdr.nlmsg_type) {
+            c.NLMSG_ERROR => {
+                const err_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
+                const err_ptr: *const NlMsgErr = @ptrCast(@alignCast(err_buf_ptr));
 
-        return error.UnknownNetlinkError;
-    } else return error.Unexpected;
+                std.debug.print("ERROR: {any}\n", .{err_ptr});
+                if (err_ptr.@"error" == 0) return NetLinkAckResp.SUCCESS;
+                if (err_ptr.@"error" == -3) return NetLinkAckResp.ROUTE_NO_EXIST;
+                if (err_ptr.@"error" == -17) return NetLinkAckResp.EXISTS;
+
+                return error.UnknownNetlinkError;
+            },
+            c.NLMSG_DONE => return .SUCCESS,
+            else => {},
+        }
+
+        offset += c.NLMSG_ALIGN(hdr.nlmsg_len);
+    }
+    return error.Unexpected;
 }
 
 fn recv_route_dump(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
