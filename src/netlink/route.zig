@@ -75,7 +75,7 @@ pub const NetlinkSocket = struct {
 
         try core.send(@intCast(nl_sock.sock), &buf, @ptrCast(&kern_addr));
 
-        try recv_route_del_ack(nl_sock.sock, &kern_addr);
+        try recv_ack_ker(nl_sock.sock, &kern_addr);
     }
 
     /// need to add proper error handling here for when we delete a route we don't need to delete
@@ -108,8 +108,7 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
         try core.send(@intCast(nl_sock.sock), &buf, @ptrCast(&kern_addr));
-
-        try recv_route_del_ack(nl_sock.sock, &kern_addr);
+        try recv_ack_ker(nl_sock.sock, &kern_addr);
     }
 
     pub fn dump_routing_table(nl_sock: NetlinkSocket) !void {
@@ -132,57 +131,12 @@ pub const NetlinkSocket = struct {
         offset += @sizeOf(c.rtmsg);
 
         try core.send(@intCast(nl_sock.sock), &buf, @ptrCast(&kern_addr));
-        try recv_route_ack(nl_sock.sock, &kern_addr);
+
+        try recv_ack_ker(nl_sock.sock, &kern_addr);
     }
 };
 
-fn recv_route_del_ack(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
-    var buf: [8192]u8 = undefined;
-
-    while (true) {
-        const len = try core.recv(sock, &buf, kern_addr);
-        if (len == 0) break;
-
-        var offset: usize = 0;
-        while (offset < len) {
-            const hdr: *const c.nlmsghdr = @ptrCast(@alignCast(&buf[offset]));
-
-            if (hdr.nlmsg_type == c.NLMSG_DONE) {
-                return;
-            } else if (hdr.nlmsg_type == c.NLMSG_ERROR) {
-                const err_ptr_start = @intFromPtr(hdr) + @sizeOf(c.nlmsghdr);
-
-                const err_ptr: *const c.nlmsgerr = @ptrFromInt(err_ptr_start);
-
-                if (std.posix.errno(err_ptr.@"error") == .SUCCESS) return;
-                return error.NetlinkError;
-            } else if (hdr.nlmsg_type == c.RTM_NEWROUTE) {
-                // get address immediately after the nlmsghdr
-                // need to cast to *anyopaque because @ptrFromInt produces a typeless pointer (same as void * in C)
-                const rtm_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
-
-                // reinterpret the above pointer as a *const c.rtmsg
-                // @alignCast ensures correct alignment before casting to the specific type
-                const rtmsg: *const c.rtmsg = @ptrCast(@alignCast(rtm_buf_ptr));
-
-                // compute start and length of the attribute section following rtmsg
-                const attr_start = @intFromPtr(rtmsg) + @sizeOf(c.rtmsg);
-                const attr_len = hdr.nlmsg_len - @sizeOf(c.nlmsghdr) - @sizeOf(c.rtmsg);
-
-                // create a slice of buf that covers just the attributes section
-                const attr_buf = buf[@intCast(attr_start - @intFromPtr(&buf))..@intCast(attr_start - @intFromPtr(&buf) + attr_len)];
-
-                // parse the attribute buffer
-                const route_info = parse_rtattrs(attr_buf);
-                std.debug.print("ROUTE INFO: {any}\n", .{route_info});
-            }
-
-            offset += @intCast(c.NLMSG_ALIGN(hdr.nlmsg_len));
-        }
-    }
-}
-
-fn recv_route_ack(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
+fn recv_ack_ker(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
     var buf: [8192]u8 = undefined;
 
     while (true) {
