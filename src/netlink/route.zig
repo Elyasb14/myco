@@ -43,6 +43,8 @@ pub const NetlinkSocket = struct {
         _ = linux.close(@intCast(sock.sock));
     }
 
+    /// need to add proper error handling here for when we add a new route we already have
+    /// errors propogate to dump_routing_table because we never check here
     pub fn add_route(nl_sock: NetlinkSocket, info: RouteInfo) !void {
         var offset: usize = 0;
         var buf: [512]u8 = undefined;
@@ -72,8 +74,11 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
         try core.send(@intCast(nl_sock.sock), &buf, @ptrCast(&kern_addr));
+
+        try recv_route_ack(nl_sock.sock, &kern_addr);
     }
 
+    /// need to add proper error handling here for when we delete a route we don't need to delete
     pub fn del_route(nl_sock: NetlinkSocket, info: RouteInfo) !void {
         var offset: usize = 0;
         var buf: [512]u8 = undefined;
@@ -103,6 +108,8 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
         try core.send(@intCast(nl_sock.sock), &buf, @ptrCast(&kern_addr));
+
+        try recv_route_ack(nl_sock.sock, &kern_addr);
     }
 
     pub fn dump_routing_table(nl_sock: NetlinkSocket) !void {
@@ -125,11 +132,11 @@ pub const NetlinkSocket = struct {
         offset += @sizeOf(c.rtmsg);
 
         try core.send(@intCast(nl_sock.sock), &buf, @ptrCast(&kern_addr));
-        try recv_route_dump_resp(nl_sock.sock, &kern_addr);
+        try recv_route_ack(nl_sock.sock, &kern_addr);
     }
 };
 
-fn recv_route_dump_resp(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
+fn recv_route_ack(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
     var buf: [8192]u8 = undefined;
 
     while (true) {
@@ -143,8 +150,11 @@ fn recv_route_dump_resp(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
             if (hdr.nlmsg_type == c.NLMSG_DONE) {
                 return;
             } else if (hdr.nlmsg_type == c.NLMSG_ERROR) {
-                std.debug.print("Netlink error\n", .{});
-                return;
+                // const int: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
+                // const err_ptr: *const c.nlmsgerr = @ptrCast(@alignCast(int));
+                // const err_code = err_ptr.@"error"; // negative errno
+                // std.debug.print("Netlink returned error code: {}\n", .{std.posix.errno(err_code)});
+                return error.NetlinkError;
             } else if (hdr.nlmsg_type == c.RTM_NEWROUTE) {
                 // get address immediately after the nlmsghdr
                 // need to cast to *anyopaque because @ptrFromInt produces a typeless pointer (same as void * in C)
