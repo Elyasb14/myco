@@ -8,7 +8,8 @@ const c = @cImport({
     @cInclude("linux/rtnetlink.h");
 });
 
-pub const NetLinkAckResp = enum(u8) { SUCCESS = 0, ROUTE_NO_EXIST = 3, EXISTS = 17 };
+pub const NetlinkAckResp = enum(u8) { SUCCESS = 0, ROUTE_NO_EXIST = 3, EXISTS = 17 };
+
 const NlMsgErr = extern struct {
     @"error": i32,
     msg: c.nlmsghdr,
@@ -144,7 +145,7 @@ pub const NetlinkSocket = struct {
     }
 };
 
-fn recv_ack(sock: i32, kern_addr: *const linux.sockaddr.nl) !NetLinkAckResp {
+fn recv_ack(sock: i32, kern_addr: *const linux.sockaddr.nl) !NetlinkAckResp {
     var buf: [8192]u8 = undefined;
     const len = try core.recv(sock, &buf, kern_addr);
     if (len == 0) return error.NoData;
@@ -159,9 +160,9 @@ fn recv_ack(sock: i32, kern_addr: *const linux.sockaddr.nl) !NetLinkAckResp {
                 const err_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
                 const err_ptr: *const NlMsgErr = @ptrCast(@alignCast(err_buf_ptr));
 
-                if (err_ptr.@"error" == 0) return NetLinkAckResp.SUCCESS;
-                if (err_ptr.@"error" == -3) return NetLinkAckResp.ROUTE_NO_EXIST;
-                if (err_ptr.@"error" == -17) return NetLinkAckResp.EXISTS;
+                if (err_ptr.@"error" == 0) return NetlinkAckResp.SUCCESS;
+                if (err_ptr.@"error" == -3) return NetlinkAckResp.ROUTE_NO_EXIST;
+                if (err_ptr.@"error" == -17) return NetlinkAckResp.EXISTS;
 
                 std.debug.print("ERROR: {any}\n", .{err_ptr});
                 return error.UnknownNetlinkError;
