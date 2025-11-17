@@ -3,7 +3,7 @@ const nl = @import("netlink/netlink.zig");
 const linux = std.os.linux;
 
 pub fn main() !void {
-    const nl_sock = try nl.NetlinkSocket.open();
+    const nl_sock = try nl.NetlinkSocket.open(linux.NETLINK.ROUTE);
     defer nl_sock.close();
 
     const route_info = nl.RouteInfo{

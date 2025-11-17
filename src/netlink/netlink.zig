@@ -26,8 +26,8 @@ pub const NetlinkSocket = struct {
     nl_sock: i32,
     kern_addr: linux.sockaddr.nl,
 
-    pub fn open() !NetlinkSocket {
-        const sock: i32 = @intCast(linux.socket(linux.AF.NETLINK, linux.SOCK.RAW, linux.NETLINK.ROUTE));
+    pub fn open(protocol: u32) !NetlinkSocket {
+        const sock: i32 = @intCast(linux.socket(linux.AF.NETLINK, linux.SOCK.RAW, protocol));
 
         const kern_addr = linux.sockaddr.nl{
             .family = linux.AF.NETLINK,
