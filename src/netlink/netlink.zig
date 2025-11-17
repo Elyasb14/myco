@@ -24,11 +24,6 @@ pub const RouteInfo = struct {
 
 pub const NetlinkSocket = struct {
     nl_sock: i32,
-    // var kern_addr = linux.sockaddr.nl{
-    //     .family = linux.AF.NETLINK,
-    //     .pid = 0, // destination: kernel
-    //     .groups = 0,
-    // };
     kern_addr: linux.sockaddr.nl,
 
     pub fn open() !NetlinkSocket {
