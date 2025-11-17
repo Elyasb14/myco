@@ -14,8 +14,10 @@ pub fn main() !void {
     };
 
     try nl_sock.add_route(route_info);
-    try nl_sock.dump_routing_table();
+    const routes = try nl_sock.dump_routing_table();
+    std.debug.print("routes: {any}\n", .{routes});
 
     try nl_sock.del_route(route_info);
-    try nl_sock.dump_routing_table();
+    const routes_new = try nl_sock.dump_routing_table();
+    std.debug.print("routes new: {any}\n", .{routes_new});
 }

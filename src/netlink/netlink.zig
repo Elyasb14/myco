@@ -121,7 +121,7 @@ pub const NetlinkSocket = struct {
         _ = resp;
     }
 
-    pub fn dump_routing_table(nl_sock: NetlinkSocket) !void {
+    pub fn dump_routing_table(nl_sock: NetlinkSocket) ![]RouteInfo {
         var buf: [@sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg)]u8 = undefined;
         var offset: usize = 0;
 
@@ -141,7 +141,7 @@ pub const NetlinkSocket = struct {
         offset += @sizeOf(c.rtmsg);
 
         try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
-        try recv_route_dump(nl_sock.nl_sock, &nl_sock.kern_addr);
+        return try recv_route_dump(nl_sock.nl_sock, &nl_sock.kern_addr);
     }
 };
 
@@ -176,8 +176,10 @@ fn recv_ack(sock: i32, kern_addr: *const linux.sockaddr.nl) !NetlinkAckResp {
     return error.Unexpected;
 }
 
-fn recv_route_dump(sock: i32, kern_addr: *const linux.sockaddr.nl) !void {
+fn recv_route_dump(sock: i32, kern_addr: *const linux.sockaddr.nl) ![]RouteInfo {
     var buf: [8192]u8 = undefined;
+    var route_buf: [1024]RouteInfo = undefined;
+    var route_count: usize = 0;
 
     while (true) {
         const len = try core.recv(sock, &buf, kern_addr);
@@ -188,11 +190,12 @@ fn recv_route_dump(sock: i32, kern_addr: *const linux.sockaddr.nl) !void {
             const hdr: *const c.nlmsghdr = @ptrCast(@alignCast(&buf[offset]));
 
             if (hdr.nlmsg_type == c.NLMSG_DONE) {
-                return;
+                return route_buf[0..route_count];
             } else if (hdr.nlmsg_type == c.NLMSG_ERROR) {
                 const err_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
                 const err_ptr: *const NlMsgErr = @ptrCast(@alignCast(err_buf_ptr));
 
+                // TODO: how can we make this less jank?
                 if (err_ptr.@"error" == 0) return error.SUCCESS;
                 if (err_ptr.@"error" == -3) return error.ROUTE_NO_EXIST;
                 if (err_ptr.@"error" == -17) return error.EXISTS;
@@ -217,12 +220,14 @@ fn recv_route_dump(sock: i32, kern_addr: *const linux.sockaddr.nl) !void {
 
                 // parse the attribute buffer
                 const route_info = parse_rtattrs(attr_buf);
-                std.debug.print("ROUTE INFO: {any}\n", .{route_info});
+                route_buf[route_count] = route_info;
+                route_count += 1;
             }
 
             offset += @intCast(c.NLMSG_ALIGN(hdr.nlmsg_len));
         }
     }
+    return route_buf[0..route_count];
 }
 
 fn parse_rtattrs(buf: []u8) RouteInfo {
