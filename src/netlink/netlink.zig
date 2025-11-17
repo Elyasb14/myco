@@ -1,4 +1,4 @@
-//! simplified netlink api
+//! netlink abstraction
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -23,15 +23,22 @@ pub const RouteInfo = struct {
 };
 
 pub const NetlinkSocket = struct {
-    sock: i32,
-    var kern_addr = linux.sockaddr.nl{
-        .family = linux.AF.NETLINK,
-        .pid = 0, // destination: kernel
-        .groups = 0,
-    };
+    nl_sock: i32,
+    // var kern_addr = linux.sockaddr.nl{
+    //     .family = linux.AF.NETLINK,
+    //     .pid = 0, // destination: kernel
+    //     .groups = 0,
+    // };
+    kern_addr: linux.sockaddr.nl,
 
     pub fn open() !NetlinkSocket {
         const sock: i32 = @intCast(linux.socket(linux.AF.NETLINK, linux.SOCK.RAW, linux.NETLINK.ROUTE));
+
+        const kern_addr = linux.sockaddr.nl{
+            .family = linux.AF.NETLINK,
+            .pid = 0, // destination: kernel
+            .groups = 0,
+        };
 
         const addr: linux.sockaddr.nl = .{
             .family = linux.AF.NETLINK,
@@ -42,11 +49,11 @@ pub const NetlinkSocket = struct {
         if (linux.bind(@intCast(sock), @ptrCast(&addr), @sizeOf(@TypeOf(addr))) < 0) {
             return error.CantBind;
         }
-        return NetlinkSocket{ .sock = sock };
+        return NetlinkSocket{ .nl_sock = sock, .kern_addr = kern_addr };
     }
 
     pub fn close(sock: NetlinkSocket) void {
-        _ = linux.close(@intCast(sock.sock));
+        _ = linux.close(@intCast(sock.nl_sock));
     }
 
     /// need to add proper error handling here for when we add a new route we already have
@@ -79,8 +86,8 @@ pub const NetlinkSocket = struct {
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
-        try core.send(@intCast(nl_sock.sock), buf[0..offset], @ptrCast(&kern_addr));
-        const resp = try recv_ack(nl_sock.sock, &kern_addr);
+        try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
+        const resp = try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
         _ = resp;
     }
 
@@ -113,8 +120,8 @@ pub const NetlinkSocket = struct {
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
-        try core.send(@intCast(nl_sock.sock), buf[0..offset], @ptrCast(&kern_addr));
-        const resp = try recv_ack(nl_sock.sock, &kern_addr);
+        try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+        const resp = try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
         _ = resp;
     }
 
@@ -137,12 +144,12 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[offset .. offset + @sizeOf(c.rtmsg)], std.mem.asBytes(&rtm));
         offset += @sizeOf(c.rtmsg);
 
-        try core.send(@intCast(nl_sock.sock), buf[0..offset], @ptrCast(&kern_addr));
-        try recv_route_dump(nl_sock.sock, &kern_addr);
+        try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+        try recv_route_dump(nl_sock.nl_sock, &nl_sock.kern_addr);
     }
 };
 
-fn recv_ack(sock: i32, kern_addr: *linux.sockaddr.nl) !NetLinkAckResp {
+fn recv_ack(sock: i32, kern_addr: *const linux.sockaddr.nl) !NetLinkAckResp {
     var buf: [8192]u8 = undefined;
     const len = try core.recv(sock, &buf, kern_addr);
     if (len == 0) return error.NoData;
@@ -173,7 +180,7 @@ fn recv_ack(sock: i32, kern_addr: *linux.sockaddr.nl) !NetLinkAckResp {
     return error.Unexpected;
 }
 
-fn recv_route_dump(sock: i32, kern_addr: *linux.sockaddr.nl) !void {
+fn recv_route_dump(sock: i32, kern_addr: *const linux.sockaddr.nl) !void {
     var buf: [8192]u8 = undefined;
 
     while (true) {
