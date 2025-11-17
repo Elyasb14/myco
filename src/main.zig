@@ -13,5 +13,9 @@ pub fn main() !void {
         .address = addr_bytes,
     };
     try nl_sock.add_addr(addr_info);
+    const addrs = try nl_sock.dump_addresses();
+    std.debug.print("addrs: {any}\n", .{addrs});
     try nl_sock.del_addr(addr_info);
+    const addrs_new = try nl_sock.dump_addresses();
+    std.debug.print("addrs: {any}\n", .{addrs_new});
 }

@@ -154,6 +154,69 @@ pub const NetlinkSocket = struct {
         return try recv_route_dump(nl_sock.nl_sock, &nl_sock.kern_addr);
     }
 
+    pub fn dump_addresses(nl_sock: NetlinkSocket) ![]AddrInfo {
+        var buf: [8192]u8 = undefined;
+        var addrs: [1024]AddrInfo = undefined;
+        var count: usize = 0;
+
+        // Prepare the netlink header
+        var nlh = c.nlmsghdr{
+            .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_GETADDR)),
+            .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_DUMP,
+            .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.ifaddrmsg),
+            .nlmsg_seq = @intCast(std.time.timestamp()),
+            .nlmsg_pid = 0,
+        };
+
+        var ifa = c.ifaddrmsg{
+            .ifa_family = c.AF_INET,
+            .ifa_prefixlen = 0,
+            .ifa_flags = 0,
+            .ifa_scope = 0,
+            .ifa_index = 0,
+        };
+
+        var offset: usize = 0;
+        @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+        offset += @sizeOf(c.nlmsghdr);
+        @memcpy(buf[offset .. offset + @sizeOf(c.ifaddrmsg)], std.mem.asBytes(&ifa));
+        offset += @sizeOf(c.ifaddrmsg);
+
+        try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+
+        while (true) {
+            const len = try core.recv(nl_sock.nl_sock, &buf, &nl_sock.kern_addr);
+            if (len == 0) break;
+
+            var off: usize = 0;
+            while (off < len) {
+                const hdr: *const c.nlmsghdr = @ptrCast(@alignCast(&buf[off]));
+
+                if (hdr.nlmsg_type == c.NLMSG_DONE) return addrs[0..count];
+                if (hdr.nlmsg_type == c.NLMSG_ERROR) return error.UnknownNetlinkError;
+                if (hdr.nlmsg_type == c.RTM_NEWADDR) {
+                    const if_addr_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
+                    const ifa_msg: *const c.ifaddrmsg = @ptrCast(@alignCast(if_addr_buf_ptr));
+
+                    const attr_start = @intFromPtr(ifa_msg) + @sizeOf(c.ifaddrmsg);
+                    const attr_len = hdr.nlmsg_len - @sizeOf(c.nlmsghdr) - @sizeOf(c.ifaddrmsg);
+                    const attr_buf = buf[@intCast(attr_start - @intFromPtr(&buf))..@intCast(attr_start - @intFromPtr(&buf) + attr_len)];
+
+                    var addr = parse_addr_attrs(attr_buf);
+                    addr.if_index = ifa_msg.ifa_index;
+                    addr.family = ifa_msg.ifa_family;
+                    addr.prefix_len = ifa_msg.ifa_prefixlen;
+
+                    addrs[count] = addr;
+                    count += 1;
+                }
+
+                off += @intCast(c.NLMSG_ALIGN(hdr.nlmsg_len));
+            }
+        }
+        return addrs[0..count];
+    }
+
     pub fn add_addr(nl_sock: NetlinkSocket, addr: AddrInfo) !void {
         var offset: usize = 0;
         var buf: [512]u8 = undefined;
@@ -367,4 +430,32 @@ fn add_rtattr(buf: []u8, offset: *usize, rta_type: c_ushort, data: []const u8) v
 
     // TODO: do we need to do this?
     offset.* = std.mem.alignForward(usize, offset.*, 4);
+}
+
+fn parse_addr_attrs(buf: []u8) AddrInfo {
+    var offset: usize = 0;
+    var info = AddrInfo{
+        .if_index = 0,
+        .prefix_len = 0,
+        .address = .{ 0, 0, 0, 0 },
+    };
+
+    while (offset + @sizeOf(c.rtattr) <= buf.len) {
+        const rta: *const c.rtattr = @ptrCast(@alignCast(&buf[offset]));
+        if (rta.rta_len == 0) break;
+
+        const data_len = @as(usize, @intCast(rta.rta_len)) - @sizeOf(c.rtattr);
+        const data = buf[offset + @sizeOf(c.rtattr) .. offset + @sizeOf(c.rtattr) + data_len];
+
+        switch (rta.rta_type) {
+            c.IFA_ADDRESS, c.IFA_LOCAL => {
+                if (data_len == 4)
+                    info.address = @as(*const [4]u8, @ptrCast(data.ptr)).*;
+            },
+            else => {},
+        }
+
+        offset += @intCast(c.RTA_ALIGN(rta.rta_len));
+    }
+    return info;
 }
