@@ -6,22 +6,12 @@ pub fn main() !void {
     const nl_sock = try nl.NetlinkSocket.open(linux.NETLINK.ROUTE);
     defer nl_sock.close();
 
-    const route_info = nl.RouteInfo{
-        .dst = .{ 1, 1, 1, 2 },
-        .gw = .{ 10, 225, 139, 1 },
-        .oif = 2,
-        .metric = 100,
+    const addr_bytes: [4]u8 = .{ 10, 225, 139, 7 };
+    const addr_info = nl.AddrInfo{
+        .if_index = 2,
+        .prefix_len = 26,
+        .address = addr_bytes,
     };
-
-    try nl_sock.add_route(route_info);
-    const routes = try nl_sock.dump_routing_table();
-    for (routes) |x| {
-        std.debug.print("{any}\n", .{x});
-    }
-
-    try nl_sock.del_route(route_info);
-    const routes_new = try nl_sock.dump_routing_table();
-    for (routes_new) |x| {
-        std.debug.print("{any}\n", .{x});
-    }
+    try nl_sock.add_addr(addr_info);
+    try nl_sock.del_addr(addr_info);
 }

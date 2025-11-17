@@ -20,10 +20,4 @@ pub fn build(b: *std.Build) void {
     myco_exe.root_module.addImport("netlink", netlink_mod);
     myco_exe.linkLibC();
     b.installArtifact(myco_exe);
-
-    const test_add_delete = b.addExecutable(.{ .name = "test_add_delete", .root_module = b.createModule(.{ .root_source_file = b.path("test/add_delete.zig"), .target = target, .optimize = optimize }) });
-    test_add_delete.root_module.addImport("netlink", netlink_mod);
-    test_add_delete.linkLibC();
-
-    b.installArtifact(test_add_delete);
 }

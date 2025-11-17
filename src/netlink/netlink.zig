@@ -6,6 +6,8 @@ const core = @import("system.zig");
 
 const c = @cImport({
     @cInclude("linux/rtnetlink.h");
+    @cInclude("linux/if.h");
+    @cInclude("linux/netlink.h");
 });
 
 pub const NetlinkAckResp = enum(u8) { SUCCESS = 0, ROUTE_NO_EXIST = 3, EXISTS = 17 };
@@ -13,6 +15,14 @@ pub const NetlinkAckResp = enum(u8) { SUCCESS = 0, ROUTE_NO_EXIST = 3, EXISTS = 
 const NlMsgErr = extern struct {
     @"error": i32,
     msg: c.nlmsghdr,
+};
+
+pub const AddrInfo = struct {
+    if_index: u32, // interface index
+    family: u8 = c.AF_INET,
+    prefix_len: u8, // like 24 for 192.168.1.10/24.... rename this to sm?
+    address: [4]u8, // full address
+
 };
 
 pub const RouteInfo = struct {
@@ -142,6 +152,78 @@ pub const NetlinkSocket = struct {
 
         try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
         return try recv_route_dump(nl_sock.nl_sock, &nl_sock.kern_addr);
+    }
+
+    pub fn add_addr(nl_sock: NetlinkSocket, addr: AddrInfo) !void {
+        var offset: usize = 0;
+        var buf: [512]u8 = undefined;
+
+        var nlh = c.nlmsghdr{
+            .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_NEWADDR)),
+            .nlmsg_flags = linux.NLM_F_REQUEST | linux.NLM_F_ACK | linux.NLM_F_CREATE | linux.NLM_F_REPLACE,
+            .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.ifaddrmsg),
+            .nlmsg_seq = @intCast(std.time.timestamp()),
+        };
+
+        const ifa = c.ifaddrmsg{
+            .ifa_family = addr.family,
+            .ifa_prefixlen = addr.prefix_len,
+            .ifa_flags = 0,
+            .ifa_scope = c.RT_SCOPE_UNIVERSE,
+            .ifa_index = addr.if_index,
+        };
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+        offset += @sizeOf(c.nlmsghdr);
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.ifaddrmsg)], std.mem.asBytes(&ifa));
+        offset += @sizeOf(c.ifaddrmsg);
+
+        add_rtattr(&buf, &offset, c.IFA_LOCAL, &addr.address);
+        add_rtattr(&buf, &offset, c.IFA_ADDRESS, &addr.address);
+
+        nlh.nlmsg_len = @intCast(offset);
+        @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+
+        try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+        const resp = try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
+        _ = resp;
+    }
+
+    pub fn del_addr(nl_sock: NetlinkSocket, addr: AddrInfo) !void {
+        var offset: usize = 0;
+        var buf: [512]u8 = undefined;
+
+        var nlh = c.nlmsghdr{
+            .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_DELADDR)),
+            .nlmsg_flags = linux.NLM_F_REQUEST | linux.NLM_F_ACK,
+            .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.ifaddrmsg),
+            .nlmsg_seq = @intCast(std.time.timestamp()),
+        };
+
+        const ifa = c.ifaddrmsg{
+            .ifa_family = addr.family,
+            .ifa_prefixlen = addr.prefix_len,
+            .ifa_flags = 0,
+            .ifa_scope = c.RT_SCOPE_UNIVERSE,
+            .ifa_index = addr.if_index,
+        };
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+        offset += @sizeOf(c.nlmsghdr);
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.ifaddrmsg)], std.mem.asBytes(&ifa));
+        offset += @sizeOf(c.ifaddrmsg);
+
+        add_rtattr(&buf, &offset, c.IFA_LOCAL, &addr.address);
+        add_rtattr(&buf, &offset, c.IFA_ADDRESS, &addr.address);
+
+        nlh.nlmsg_len = @intCast(offset);
+        @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+
+        try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+        const resp = try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
+        _ = resp;
     }
 };
 

@@ -1,1 +1,0 @@
-            } else if (hdr.nlmsg_type == c.RTM_NEWROUTE) {
