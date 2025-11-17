@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const linux = std.os.linux;
-const core = @import("core.zig");
+const core = @import("system.zig");
 
 const c = @cImport({
     @cInclude("linux/rtnetlink.h");
