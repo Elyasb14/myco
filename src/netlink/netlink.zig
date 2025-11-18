@@ -11,7 +11,7 @@ const c = @cImport({
     @cInclude("linux/netlink.h");
 });
 
-pub const NetlinkAckResp = enum(u8) { SUCCESS = 0, ROUTE_NO_EXIST = 3, EXISTS = 17 };
+pub const NetlinkAckResp = enum(u8) { NEED_SUDO = 1, SUCCESS = 0, ROUTE_NO_EXIST = 3, EXISTS = 17 };
 
 const NlMsgErr = extern struct {
     @"error": i32,
@@ -310,6 +310,7 @@ fn recv_ack(sock: i32, kern_addr: *const linux.sockaddr.nl) !NetlinkAckResp {
                 const err_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
                 const err_ptr: *const NlMsgErr = @ptrCast(@alignCast(err_buf_ptr));
 
+                if (err_ptr.@"error" == -1) return NetlinkAckResp.NEED_SUDO;
                 if (err_ptr.@"error" == 0) return NetlinkAckResp.SUCCESS;
                 if (err_ptr.@"error" == -3) return NetlinkAckResp.ROUTE_NO_EXIST;
                 if (err_ptr.@"error" == -17) return NetlinkAckResp.EXISTS;
@@ -347,6 +348,7 @@ fn recv_route_dump(sock: i32, kern_addr: *const linux.sockaddr.nl) ![]RouteInfo 
 
                 // TODO: how can we make this less jank?
                 if (err_ptr.@"error" == 0) return error.SUCCESS;
+                if (err_ptr.@"error" == -1) return error.NEED_SUDO;
                 if (err_ptr.@"error" == -3) return error.ROUTE_NO_EXIST;
                 if (err_ptr.@"error" == -17) return error.EXISTS;
 
