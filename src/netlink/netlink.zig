@@ -458,5 +458,8 @@ fn parse_addr_attrs(buf: []u8) AddrInfo {
 
         offset += @intCast(c.RTA_ALIGN(rta.rta_len));
     }
+    var name_buf: [1024]u8 = undefined;
+    const name = c.if_indextoname(info.if_index, &name_buf);
+    std.debug.print("addr family: {any}\n", .{name});
     return info;
 }
