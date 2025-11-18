@@ -6,7 +6,8 @@ const core = @import("system.zig");
 
 const c = @cImport({
     @cInclude("linux/rtnetlink.h");
-    @cInclude("linux/if.h");
+    // @cInclude("linux/if.h");
+    @cInclude("net/if.h");
     @cInclude("linux/netlink.h");
 });
 
@@ -364,7 +365,7 @@ fn recv_route_dump(sock: i32, kern_addr: *const linux.sockaddr.nl) ![]RouteInfo 
                 const attr_buf = buf[@intCast(attr_start - @intFromPtr(&buf))..@intCast(attr_start - @intFromPtr(&buf) + attr_len)];
 
                 // parse the attribute buffer
-                const route_info = parse_rtattrs(attr_buf);
+                const route_info = parse_route_attrs(attr_buf);
                 route_buf[route_count] = route_info;
                 route_count += 1;
             }
@@ -375,7 +376,7 @@ fn recv_route_dump(sock: i32, kern_addr: *const linux.sockaddr.nl) ![]RouteInfo 
     return route_buf[0..route_count];
 }
 
-fn parse_rtattrs(buf: []u8) RouteInfo {
+fn parse_route_attrs(buf: []u8) RouteInfo {
     var offset: usize = 0;
 
     var route = RouteInfo{};

@@ -8,9 +8,14 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("../src/netlink/netlink.zig"),
     });
 
-    const test_add_delete = b.addExecutable(.{ .name = "test_add_delete", .root_module = b.createModule(.{ .root_source_file = b.path("src/test_add_delete.zig"), .target = target, .optimize = optimize }) });
-    test_add_delete.root_module.addImport("netlink", netlink_mod);
-    test_add_delete.linkLibC();
+    const test_add_delete_route = b.addExecutable(.{ .name = "test_add_delete_route", .root_module = b.createModule(.{ .root_source_file = b.path("src/test_add_delete_route.zig"), .target = target, .optimize = optimize }) });
+    test_add_delete_route.root_module.addImport("netlink", netlink_mod);
+    test_add_delete_route.linkLibC();
 
-    b.installArtifact(test_add_delete);
+    const test_add_delete_addr = b.addExecutable(.{ .name = "test_add_delete_addr", .root_module = b.createModule(.{ .root_source_file = b.path("src/test_add_delete_addr.zig"), .target = target, .optimize = optimize }) });
+    test_add_delete_addr.root_module.addImport("netlink", netlink_mod);
+    test_add_delete_route.linkLibC();
+    test_add_delete_addr.linkLibC();
+    b.installArtifact(test_add_delete_route);
+    b.installArtifact(test_add_delete_addr);
 }
