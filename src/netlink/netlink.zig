@@ -208,6 +208,10 @@ pub const NetlinkSocket = struct {
                     addr.family = ifa_msg.ifa_family;
                     addr.prefix_len = ifa_msg.ifa_prefixlen;
 
+                    var name_buf: [c.IF_NAMESIZE]u8 = undefined;
+                    const name = c.if_indextoname(addr.if_index, &name_buf);
+                    std.debug.print("name: {s}\n", .{name});
+
                     addrs[count] = addr;
                     count += 1;
                 }
@@ -458,8 +462,5 @@ fn parse_addr_attrs(buf: []u8) AddrInfo {
 
         offset += @intCast(c.RTA_ALIGN(rta.rta_len));
     }
-    var name_buf: [1024]u8 = undefined;
-    const name = c.if_indextoname(info.if_index, &name_buf);
-    std.debug.print("addr family: {any}\n", .{name});
     return info;
 }
