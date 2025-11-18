@@ -21,7 +21,7 @@ const NlMsgErr = extern struct {
 pub const AddrInfo = struct {
     if_index: u32, // interface index
     family: u8 = c.AF_INET,
-    prefix_len: u8, // like 24 for 192.168.1.10/24.... rename this to sm?
+    prefix_len: u8, // subnet mask
     address: [4]u8, // full address
 
 };
