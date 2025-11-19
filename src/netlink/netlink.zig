@@ -435,7 +435,6 @@ fn add_rtattr(buf: []u8, offset: *usize, rta_type: c_ushort, data: []const u8) v
     @memcpy(buf[offset.* .. offset.* + data.len], data);
     offset.* += data.len;
 
-    // TODO: do we need to do this?
     offset.* = std.mem.alignForward(usize, offset.*, 4);
 }
 
