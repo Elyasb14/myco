@@ -93,8 +93,7 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
         try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
-        const resp = try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
-        _ = resp;
+        try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
     }
 
     /// need to add proper error handling here for when we delete a route we don't need to delete
@@ -127,8 +126,7 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
         try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
-        const resp = try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
-        _ = resp;
+        try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
     }
 
     pub fn dump_routing_table(nl_sock: NetlinkSocket) ![]RouteInfo {
@@ -254,8 +252,7 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
         try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
-        const resp = try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
-        _ = resp;
+        try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
     }
 
     pub fn del_addr(nl_sock: NetlinkSocket, addr: AddrInfo) !void {
@@ -290,11 +287,12 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
         try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
-        const resp = try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
-        _ = resp;
+        try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
     }
 };
 
+/// if ack is successful, we return void
+/// else, return NetlinkError
 fn recv_ack(sock: i32, kern_addr: *const linux.sockaddr.nl) NetlinkError!void {
     var buf: [8192]u8 = undefined;
     const len = try core.recv(sock, &buf, kern_addr);
