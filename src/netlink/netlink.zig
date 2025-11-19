@@ -27,6 +27,7 @@ pub const AddrInfo = struct {
 
 };
 
+/// oif: output interface index
 pub const RouteInfo = struct {
     dst: ?[4]u8 = null,
     gw: ?[4]u8 = null,
