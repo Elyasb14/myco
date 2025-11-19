@@ -20,6 +20,7 @@ const NlMsgErr = extern struct {
 
 pub const AddrInfo = struct {
     if_index: u32, // interface index
+    if_name: ?[]u8 = null,
     family: u8 = c.AF_INET,
     prefix_len: u8, // subnet mask
     address: [4]u8, // full address
@@ -63,8 +64,6 @@ pub const NetlinkSocket = struct {
         _ = linux.close(@intCast(sock.nl_sock));
     }
 
-    /// need to add proper error handling here for when we add a new route we already have
-    /// errors propogate to dump_routing_table because we never check here
     pub fn add_route(nl_sock: NetlinkSocket, info: RouteInfo) !void {
         var offset: usize = 0;
         var buf: [512]u8 = undefined;
@@ -210,7 +209,8 @@ pub const NetlinkSocket = struct {
 
                     var name_buf: [c.IF_NAMESIZE]u8 = undefined;
                     const name = c.if_indextoname(addr.if_index, &name_buf);
-                    std.debug.print("name: {s}\n", .{name});
+
+                    addr.if_name = std.mem.span(name);
 
                     addrs[count] = addr;
                     count += 1;
