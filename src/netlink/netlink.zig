@@ -1,4 +1,5 @@
 //! netlink abstraction
+//! https://man.archlinux.org/man/rtnetlink.7.en
 
 const std = @import("std");
 const linux = std.os.linux;
