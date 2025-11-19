@@ -11,7 +11,7 @@ const c = @cImport({
     @cInclude("linux/netlink.h");
 });
 
-pub const NetlinkError = error{ NEED_SUDO, ROUTE_NO_EXIST, EXISTS, UNKNOWN, NO_DATA };
+pub const NetlinkError = error{ NEED_SUDO, NO_EXISTS, EXISTS, UNKNOWN, NO_DATA };
 
 const NlMsgErr = extern struct {
     @"error": i32,
@@ -310,7 +310,7 @@ fn recv_ack(sock: i32, kern_addr: *const linux.sockaddr.nl) NetlinkError!void {
 
                 if (err_ptr.@"error" == 0) return;
                 if (err_ptr.@"error" == -1) return NetlinkError.NEED_SUDO;
-                if (err_ptr.@"error" == -3) return NetlinkError.ROUTE_NO_EXIST;
+                if (err_ptr.@"error" == -3) return NetlinkError.NO_EXISTS;
                 if (err_ptr.@"error" == -17) return NetlinkError.EXISTS;
 
                 std.debug.print("ERROR: {any}\n", .{err_ptr});
@@ -347,7 +347,7 @@ fn recv_route_dump(sock: i32, kern_addr: *const linux.sockaddr.nl) NetlinkError!
                 // TODO: how can we make this less jank?
                 if (err_ptr.@"error" == 0) return route_buf[0..route_count];
                 if (err_ptr.@"error" == -1) return NetlinkError.NEED_SUDO;
-                if (err_ptr.@"error" == -3) return NetlinkError.ROUTE_NO_EXIST;
+                if (err_ptr.@"error" == -3) return NetlinkError.NO_EXISTS;
                 if (err_ptr.@"error" == -17) return NetlinkError.EXISTS;
 
                 std.debug.print("ERROR: {any}\n", .{err_ptr});
