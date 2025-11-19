@@ -228,7 +228,7 @@ pub const NetlinkSocket = struct {
 
         var nlh = c.nlmsghdr{
             .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_NEWADDR)),
-            .nlmsg_flags = linux.NLM_F_REQUEST | linux.NLM_F_ACK | linux.NLM_F_CREATE | linux.NLM_F_REPLACE,
+            .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_ACK | c.NLM_F_CREATE | c.NLM_F_REPLACE,
             .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.ifaddrmsg),
             .nlmsg_seq = @intCast(std.time.timestamp()),
         };
@@ -264,7 +264,7 @@ pub const NetlinkSocket = struct {
 
         var nlh = c.nlmsghdr{
             .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_DELADDR)),
-            .nlmsg_flags = linux.NLM_F_REQUEST | linux.NLM_F_ACK,
+            .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_ACK,
             .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.ifaddrmsg),
             .nlmsg_seq = @intCast(std.time.timestamp()),
         };
