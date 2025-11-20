@@ -16,7 +16,6 @@ pub fn recv(fd: i32, buf: []u8, addr: *const linux.sockaddr.nl) !usize {
 
 /// returns error if bad state, void if fine
 pub fn map_err(rc: i32) nl.NetlinkError!void {
-    if (rc == 0) return;
     if (rc == -1) return nl.NetlinkError.NEED_SUDO;
     if (rc == -3) return nl.NetlinkError.NO_EXISTS;
     if (rc == -17) return nl.NetlinkError.EXISTS;

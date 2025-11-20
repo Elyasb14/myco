@@ -8,19 +8,24 @@ pub fn main() !void {
 
     const route_info = nl.RouteInfo{
         .dst = .{ 1, 1, 1, 2 },
-        .gw = .{ 10, 225, 139, 1 },
+        .gw = .{ 10, 0, 2, 1 },
         .oif = 2,
         .metric = 100,
     };
 
+    var route_buf_pre: [24]nl.RouteInfo = undefined;
+    var route_buf_post: [24]nl.RouteInfo = undefined;
+
     try nl_sock.add_route(route_info);
-    const routes = try nl_sock.dump_routing_table();
+    const n = try nl_sock.dump_routing_table(&route_buf_pre);
+    const routes = route_buf_pre[0..n];
     for (routes) |x| {
         std.debug.print("{any}\n", .{x});
     }
 
     try nl_sock.del_route(route_info);
-    const routes_new = try nl_sock.dump_routing_table();
+    const m = try nl_sock.dump_routing_table(&route_buf_post);
+    const routes_new = route_buf_post[0..m];
     for (routes_new) |x| {
         std.debug.print("{any}\n", .{x});
     }

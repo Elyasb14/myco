@@ -144,7 +144,7 @@ pub const NetlinkSocket = struct {
         try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
     }
 
-    pub fn dump_routing_table(nl_sock: NetlinkSocket) ![]RouteInfo {
+    pub fn dump_routing_table(nl_sock: NetlinkSocket, out: []RouteInfo) !usize {
         var buf: [@sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg)]u8 = undefined;
         var offset: usize = 0;
 
@@ -164,7 +164,7 @@ pub const NetlinkSocket = struct {
         offset += @sizeOf(c.rtmsg);
 
         try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
-        return try recv_route_dump(nl_sock.nl_sock, &nl_sock.kern_addr);
+        return try fill_route_buf(nl_sock.nl_sock, &nl_sock.kern_addr, out);
     }
 
     pub fn dump_addresses(nl_sock: NetlinkSocket, out: []AddrInfo) !usize {
@@ -322,9 +322,9 @@ fn recv_ack(sock: i32, kern_addr: *const linux.sockaddr.nl) NetlinkError!void {
                 const err_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
                 const err_ptr: *const NlMsgErr = @ptrCast(@alignCast(err_buf_ptr));
 
+                if (err_ptr.@"error" == 0) return;
                 try sys.map_err(err_ptr.@"error");
 
-                std.debug.print("ERROR: {any}\n", .{err_ptr});
                 return NetlinkError.UNKNOWN;
             },
             c.NLMSG_DONE => return,
@@ -336,9 +336,8 @@ fn recv_ack(sock: i32, kern_addr: *const linux.sockaddr.nl) NetlinkError!void {
     return NetlinkError.UNKNOWN;
 }
 
-fn recv_route_dump(sock: i32, kern_addr: *const linux.sockaddr.nl) NetlinkError![]RouteInfo {
+fn fill_route_buf(sock: i32, kern_addr: *const linux.sockaddr.nl, out: []RouteInfo) NetlinkError!usize {
     var buf: [8192]u8 = undefined;
-    var route_buf: [1024]RouteInfo = undefined;
     var route_count: usize = 0;
 
     while (true) {
@@ -350,17 +349,12 @@ fn recv_route_dump(sock: i32, kern_addr: *const linux.sockaddr.nl) NetlinkError!
             const hdr: *const c.nlmsghdr = @ptrCast(@alignCast(&buf[offset]));
 
             if (hdr.nlmsg_type == c.NLMSG_DONE) {
-                return route_buf[0..route_count];
+                return route_count;
             } else if (hdr.nlmsg_type == c.NLMSG_ERROR) {
                 const err_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
                 const err_ptr: *const NlMsgErr = @ptrCast(@alignCast(err_buf_ptr));
-
-                //TODO: lift buffer to user level
-                if (err_ptr.@"error" == 0) return route_buf[0..route_count];
-
+                if (err_ptr.@"error" == 0) return route_count;
                 try sys.map_err(err_ptr.@"error");
-
-                std.debug.print("ERROR: {any}\n", .{err_ptr});
                 return NetlinkError.UNKNOWN;
             } else if (hdr.nlmsg_type == c.RTM_NEWROUTE) {
                 // get address immediately after the nlmsghdr
@@ -380,14 +374,14 @@ fn recv_route_dump(sock: i32, kern_addr: *const linux.sockaddr.nl) NetlinkError!
 
                 // parse the attribute buffer
                 const route_info = parse_route_attrs(attr_buf);
-                route_buf[route_count] = route_info;
+                out[route_count] = route_info;
                 route_count += 1;
             }
 
             offset += @intCast(c.NLMSG_ALIGN(hdr.nlmsg_len));
         }
     }
-    return route_buf[0..route_count];
+    return route_count;
 }
 
 fn parse_route_attrs(buf: []u8) RouteInfo {
