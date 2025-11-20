@@ -66,6 +66,19 @@ pub const NetlinkSocket = struct {
         _ = linux.close(@intCast(sock.nl_sock));
     }
 
+    pub fn create_link(nl_sock: NetlinkSocket, name: []const u8) void {
+        _ = name;
+        _ = nl_sock;
+
+        var nlh = c.nlmsghdr{
+            .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_NEWLINK)),
+            .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_CREATE | c.NLM_F_ACK,
+            .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg),
+            .nlmsg_seq = @intCast(std.time.timestamp()),
+        };
+        _ = &nlh;
+    }
+
     pub fn add_route(nl_sock: NetlinkSocket, info: RouteInfo) !void {
         var offset: usize = 0;
         var buf: [512]u8 = undefined;
