@@ -21,7 +21,6 @@ const NlMsgErr = extern struct {
 
 pub const AddrInfo = struct {
     if_index: u32, // interface index
-    if_name: []const u8 = undefined, // interface index as a string
     family: u8 = c.AF_INET,
     prefix_len: u8, // subnet mask
     address: [4]u8, // full address
@@ -218,11 +217,6 @@ pub const NetlinkSocket = struct {
                     addr.if_index = ifa_msg.ifa_index;
                     addr.family = ifa_msg.ifa_family;
                     addr.prefix_len = ifa_msg.ifa_prefixlen;
-
-                    var name_buf: [c.IF_NAMESIZE]u8 = undefined;
-                    const name = c.if_indextoname(addr.if_index, &name_buf);
-
-                    addr.if_name = std.mem.span(name);
 
                     out[count] = addr;
                     count += 1;
