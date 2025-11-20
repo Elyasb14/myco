@@ -14,7 +14,7 @@ const c = @cImport({
     @cInclude("linux/netlink.h");
 });
 
-pub const NetlinkError = error{ NEED_SUDO, NO_EXISTS, EXISTS, UNKNOWN, NO_DATA, ADDR_NOT_AVAIL, TOOBIG, OP_NOT_SUPPORTED };
+pub const NetlinkError = error{ NEED_SUDO, NO_EXISTS, EXISTS, UNKNOWN, NO_DATA, ADDR_NOT_AVAIL, TOOBIG, OP_NOT_SUPPORTED, NODEV };
 
 const NlMsgErr = extern struct {
     @"error": i32,
@@ -103,7 +103,7 @@ pub const NetlinkSocket = struct {
         try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
         recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
             NetlinkError.OP_NOT_SUPPORTED => {
-                std.log.err("link type not supported: {s}", .{info.kind});
+                std.log.err("\x1b[31mlink type not supported\x1b[0m: {s}", .{info.kind});
                 return err;
             },
             else => return err,
@@ -139,7 +139,36 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
         try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
-        try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
+        recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
+            NetlinkError.NODEV => {
+                std.log.err("\x1b[31mno such device name\x1b[0m: {s}", .{info.name});
+                return err;
+            },
+            else => return err,
+        };
+    }
+
+    pub fn dump_links(nl_sock: NetlinkSocket, out: []u8) void {
+        var buf: [@sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg)]u8 = undefined;
+        var offset: usize = 0;
+
+        const nlh = c.nlmsghdr{
+            .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_GETROUTE)),
+            .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_DUMP,
+            .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg),
+            .nlmsg_seq = @intCast(std.time.timestamp()),
+            .nlmsg_pid = 0,
+        };
+        const rtm = c.rtmsg{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN };
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+        offset += @sizeOf(c.nlmsghdr);
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.rtmsg)], std.mem.asBytes(&rtm));
+        offset += @sizeOf(c.rtmsg);
+
+        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+        return try fill_route_buf(nl_sock.nl_sock, &nl_sock.kern_addr, out);
     }
 
     pub fn add_route(nl_sock: NetlinkSocket, info: RouteInfo) !void {

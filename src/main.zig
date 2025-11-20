@@ -7,7 +7,8 @@ pub fn main() !void {
     defer nl_sock.close();
 
     const info = nl.LinkInfo{ .kind = "wireguard", .name = "night" };
+    const info2 = nl.LinkInfo{ .kind = "night", .name = "blah" };
 
     try nl_sock.add_link(info);
-    try nl_sock.del_link(info);
+    try nl_sock.del_link(info2);
 }
