@@ -14,10 +14,12 @@ pub fn recv(fd: i32, buf: []u8, addr: *const linux.sockaddr.nl) !usize {
     return @intCast(n);
 }
 
-/// returns error if bad state, void if fine
 pub fn map_err(rc: i32) nl.NetlinkError!void {
-    if (rc == -1) return nl.NetlinkError.NEED_SUDO;
-    if (rc == -3) return nl.NetlinkError.NO_EXISTS;
-    if (rc == -17) return nl.NetlinkError.EXISTS;
-    if (rc == -101) return nl.NetlinkError.ADDR_NOT_AVAIL;
+    switch (rc) {
+        -1 => return nl.NetlinkError.NEED_SUDO,
+        -3 => return nl.NetlinkError.NO_EXISTS,
+        -17 => return nl.NetlinkError.EXISTS,
+        -101 => return nl.NetlinkError.ADDR_NOT_AVAIL,
+        else => return nl.NetlinkError.UNKNOWN,
+    }
 }
