@@ -1,5 +1,6 @@
 //! netlink abstraction
 //! https://man.archlinux.org/man/rtnetlink.7.en
+//! https://man7.org/linux/man-pages/man3/libnetlink.3.html
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -485,7 +486,6 @@ fn parse_addr_attrs(buf: []u8) AddrInfo {
 
 fn add_rtattr_nested_start(buf: []u8, offset: *usize, rta_type: c.ushort) usize {
     const start = offset.*;
-    // Reserve outer header
     const rta = c.rtattr{
         .rta_len = @intCast(@sizeOf(c.rtattr)), // temp, will patch later
         .rta_type = rta_type | @as(c.ushort, @intCast(c.NLA_F_NESTED)),
