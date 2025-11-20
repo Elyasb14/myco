@@ -149,26 +149,26 @@ pub const NetlinkSocket = struct {
     }
 
     pub fn dump_links(nl_sock: NetlinkSocket, out: []u8) void {
-        var buf: [@sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg)]u8 = undefined;
+        _ = out;
+        var buf: [@sizeOf(c.nlmsghdr) + @sizeOf(c.ifinfomsg)]u8 = undefined;
         var offset: usize = 0;
 
         const nlh = c.nlmsghdr{
-            .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_GETROUTE)),
+            .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_GETLINK)),
             .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_DUMP,
             .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg),
             .nlmsg_seq = @intCast(std.time.timestamp()),
             .nlmsg_pid = 0,
         };
-        const rtm = c.rtmsg{ .rtm_family = linux.AF.INET, .rtm_table = c.RT_TABLE_MAIN };
+        const ifimsg = c.ifinfomsg{};
 
-        @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+        @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
         offset += @sizeOf(c.nlmsghdr);
 
-        @memcpy(buf[offset .. offset + @sizeOf(c.rtmsg)], std.mem.asBytes(&rtm));
-        offset += @sizeOf(c.rtmsg);
+        @memcpy(buf[offset .. offset + @sizeOf(c.ifinfomsg)], std.mem.asBytes(&ifimsg));
+        offset += @sizeOf(c.ifinfomsg);
 
         try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
-        return try fill_route_buf(nl_sock.nl_sock, &nl_sock.kern_addr, out);
     }
 
     pub fn add_route(nl_sock: NetlinkSocket, info: RouteInfo) !void {
