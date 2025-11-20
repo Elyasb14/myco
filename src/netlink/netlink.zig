@@ -12,7 +12,7 @@ const c = @cImport({
     @cInclude("linux/netlink.h");
 });
 
-pub const NetlinkError = error{ NEED_SUDO, NO_EXISTS, EXISTS, UNKNOWN, NO_DATA };
+pub const NetlinkError = error{ NEED_SUDO, NO_EXISTS, EXISTS, UNKNOWN, NO_DATA, ADDR_NOT_AVAIL };
 
 const NlMsgErr = extern struct {
     @"error": i32,
@@ -167,9 +167,8 @@ pub const NetlinkSocket = struct {
         return try recv_route_dump(nl_sock.nl_sock, &nl_sock.kern_addr);
     }
 
-    pub fn dump_addresses(nl_sock: NetlinkSocket) ![]AddrInfo {
+    pub fn dump_addresses(nl_sock: NetlinkSocket, out: []AddrInfo) !usize {
         var buf: [8192]u8 = undefined;
-        var addrs: [1024]AddrInfo = undefined;
         var count: usize = 0;
 
         // Prepare the netlink header
@@ -205,7 +204,7 @@ pub const NetlinkSocket = struct {
             while (off < len) {
                 const hdr: *const c.nlmsghdr = @ptrCast(@alignCast(&buf[off]));
 
-                if (hdr.nlmsg_type == c.NLMSG_DONE) return addrs[0..count];
+                if (hdr.nlmsg_type == c.NLMSG_DONE) return count;
                 if (hdr.nlmsg_type == c.NLMSG_ERROR) return error.UnknownNetlinkError;
                 if (hdr.nlmsg_type == c.RTM_NEWADDR) {
                     const if_addr_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
@@ -225,14 +224,14 @@ pub const NetlinkSocket = struct {
 
                     addr.if_name = std.mem.span(name);
 
-                    addrs[count] = addr;
+                    out[count] = addr;
                     count += 1;
                 }
 
                 off += @intCast(c.NLMSG_ALIGN(hdr.nlmsg_len));
             }
         }
-        return addrs[0..count];
+        return count;
     }
 
     pub fn add_addr(nl_sock: NetlinkSocket, addr: AddrInfo) !void {
@@ -327,6 +326,7 @@ fn recv_ack(sock: i32, kern_addr: *const linux.sockaddr.nl) NetlinkError!void {
                 if (err_ptr.@"error" == -1) return NetlinkError.NEED_SUDO;
                 if (err_ptr.@"error" == -3) return NetlinkError.NO_EXISTS;
                 if (err_ptr.@"error" == -17) return NetlinkError.EXISTS;
+                if (err_ptr.@"error" == -101) return NetlinkError.ADDR_NOT_AVAIL;
 
                 std.debug.print("ERROR: {any}\n", .{err_ptr});
                 return NetlinkError.UNKNOWN;
@@ -359,11 +359,11 @@ fn recv_route_dump(sock: i32, kern_addr: *const linux.sockaddr.nl) NetlinkError!
                 const err_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
                 const err_ptr: *const NlMsgErr = @ptrCast(@alignCast(err_buf_ptr));
 
-                // TODO: how can we make this less jank?
                 if (err_ptr.@"error" == 0) return route_buf[0..route_count];
                 if (err_ptr.@"error" == -1) return NetlinkError.NEED_SUDO;
                 if (err_ptr.@"error" == -3) return NetlinkError.NO_EXISTS;
                 if (err_ptr.@"error" == -17) return NetlinkError.EXISTS;
+                if (err_ptr.@"error" == -101) return NetlinkError.ADDR_NOT_AVAIL;
 
                 std.debug.print("ERROR: {any}\n", .{err_ptr});
                 return NetlinkError.UNKNOWN;
