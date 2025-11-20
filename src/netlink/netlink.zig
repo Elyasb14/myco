@@ -14,14 +14,17 @@ const c = @cImport({
     @cInclude("linux/netlink.h");
 });
 
-pub const NetlinkError = error{ NEED_SUDO, NO_EXISTS, EXISTS, UNKNOWN, NO_DATA, ADDR_NOT_AVAIL, TOOBIG };
+pub const NetlinkError = error{ NEED_SUDO, NO_EXISTS, EXISTS, UNKNOWN, NO_DATA, ADDR_NOT_AVAIL, TOOBIG, OP_NOT_SUPPORTED };
 
 const NlMsgErr = extern struct {
     @"error": i32,
     msg: c.nlmsghdr,
 };
 
-pub const LinkInfo = struct {};
+pub const LinkInfo = struct {
+    name: []const u8,
+    kind: []const u8,
+};
 
 pub const AddrInfo = struct {
     if_index: u32, // interface index
@@ -69,7 +72,7 @@ pub const NetlinkSocket = struct {
         _ = linux.close(@intCast(sock.nl_sock));
     }
 
-    pub fn create_link(nl_sock: NetlinkSocket) !void {
+    pub fn add_link(nl_sock: NetlinkSocket, info: LinkInfo) !void {
         var buf: [512]u8 = undefined;
         var offset: usize = 0;
 
@@ -88,10 +91,48 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[offset .. offset + @sizeOf(c.ifinfomsg)], std.mem.asBytes(&ifimsg));
         offset += @sizeOf(c.ifinfomsg);
 
-        add_rtattr(&buf, &offset, c.IFLA_IFNAME, "wg0"); // interface name
+        add_rtattr(&buf, &offset, c.IFLA_IFNAME, info.name); // interface name
 
         const nested_start = add_rtattr_nested_start(&buf, &offset, c.IFLA_LINKINFO);
-        add_rtattr(&buf, &offset, c.IFLA_INFO_KIND, "wireguard");
+        add_rtattr(&buf, &offset, c.IFLA_INFO_KIND, info.kind);
+        add_rtattr_nested_end(&buf, nested_start, &offset);
+
+        nlh.nlmsg_len = @intCast(offset);
+        @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+
+        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
+        recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
+            NetlinkError.OP_NOT_SUPPORTED => {
+                std.log.err("link type not supported: {s}", .{info.kind});
+                return err;
+            },
+            else => return err,
+        };
+    }
+
+    pub fn del_link(nl_sock: NetlinkSocket, info: LinkInfo) !void {
+        var buf: [512]u8 = undefined;
+        var offset: usize = 0;
+
+        var nlh = c.nlmsghdr{
+            .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_DELLINK)),
+            .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_ACK,
+            .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.ifinfomsg),
+            .nlmsg_seq = @intCast(std.time.timestamp()),
+        };
+
+        const ifimsg = c.ifinfomsg{}; // default zero values are fine for now
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+        offset += @sizeOf(c.nlmsghdr);
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.ifinfomsg)], std.mem.asBytes(&ifimsg));
+        offset += @sizeOf(c.ifinfomsg);
+
+        add_rtattr(&buf, &offset, c.IFLA_IFNAME, info.name); // interface name
+
+        const nested_start = add_rtattr_nested_start(&buf, &offset, c.IFLA_LINKINFO);
+        add_rtattr(&buf, &offset, c.IFLA_INFO_KIND, info.kind);
         add_rtattr_nested_end(&buf, nested_start, &offset);
 
         nlh.nlmsg_len = @intCast(offset);

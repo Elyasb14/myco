@@ -6,5 +6,8 @@ pub fn main() !void {
     const nl_sock = try nl.NetlinkSocket.open(linux.NETLINK.ROUTE);
     defer nl_sock.close();
 
-    try nl_sock.create_link();
+    const info = nl.LinkInfo{ .kind = "wireguard", .name = "night" };
+
+    try nl_sock.add_link(info);
+    try nl_sock.del_link(info);
 }
