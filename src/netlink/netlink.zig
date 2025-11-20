@@ -12,12 +12,14 @@ const c = @cImport({
     @cInclude("linux/netlink.h");
 });
 
-pub const NetlinkError = error{ NEED_SUDO, NO_EXISTS, EXISTS, UNKNOWN, NO_DATA, ADDR_NOT_AVAIL };
+pub const NetlinkError = error{ NEED_SUDO, NO_EXISTS, EXISTS, UNKNOWN, NO_DATA, ADDR_NOT_AVAIL, TOOBIG };
 
 const NlMsgErr = extern struct {
     @"error": i32,
     msg: c.nlmsghdr,
 };
+
+pub const LinkInfo = struct {};
 
 pub const AddrInfo = struct {
     if_index: u32, // interface index
@@ -65,17 +67,33 @@ pub const NetlinkSocket = struct {
         _ = linux.close(@intCast(sock.nl_sock));
     }
 
-    pub fn create_link(nl_sock: NetlinkSocket, name: []const u8) void {
-        _ = name;
-        _ = nl_sock;
+    pub fn create_link(nl_sock: NetlinkSocket) !void {
+        var buf: [512]u8 = undefined;
+        var offset: usize = 0;
 
         var nlh = c.nlmsghdr{
             .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_NEWLINK)),
             .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_CREATE | c.NLM_F_ACK,
-            .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg),
+            .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.ifinfomsg),
             .nlmsg_seq = @intCast(std.time.timestamp()),
         };
-        _ = &nlh;
+
+        const ifimsg = c.ifinfomsg{}; // default zero values are fine for now
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+        offset += @sizeOf(c.nlmsghdr);
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.ifinfomsg)], std.mem.asBytes(&ifimsg));
+        offset += @sizeOf(c.ifinfomsg);
+
+        add_rtattr(&buf, &offset, c.IFLA_INFO_KIND, "wireguard");
+        add_rtattr(&buf, &offset, c.IFLA_LINKINFO, "wg0");
+
+        nlh.nlmsg_len = @intCast(offset);
+        @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+
+        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
+        try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
     }
 
     pub fn add_route(nl_sock: NetlinkSocket, info: RouteInfo) !void {
