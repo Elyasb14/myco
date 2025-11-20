@@ -3,7 +3,7 @@
 
 const std = @import("std");
 const linux = std.os.linux;
-const core = @import("system.zig");
+const sys = @import("system.zig");
 
 const c = @cImport({
     @cInclude("linux/rtnetlink.h");
@@ -107,7 +107,7 @@ pub const NetlinkSocket = struct {
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
-        try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
+        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
         try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
     }
 
@@ -140,7 +140,7 @@ pub const NetlinkSocket = struct {
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
-        try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
         try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
     }
 
@@ -163,7 +163,7 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[offset .. offset + @sizeOf(c.rtmsg)], std.mem.asBytes(&rtm));
         offset += @sizeOf(c.rtmsg);
 
-        try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
         return try recv_route_dump(nl_sock.nl_sock, &nl_sock.kern_addr);
     }
 
@@ -194,10 +194,10 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[offset .. offset + @sizeOf(c.ifaddrmsg)], std.mem.asBytes(&ifa));
         offset += @sizeOf(c.ifaddrmsg);
 
-        try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
 
         while (true) {
-            const len = try core.recv(nl_sock.nl_sock, &buf, &nl_sock.kern_addr);
+            const len = try sys.recv(nl_sock.nl_sock, &buf, &nl_sock.kern_addr);
             if (len == 0) break;
 
             var off: usize = 0;
@@ -265,7 +265,7 @@ pub const NetlinkSocket = struct {
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
-        try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
         try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
     }
 
@@ -300,7 +300,7 @@ pub const NetlinkSocket = struct {
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
-        try core.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
         try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
     }
 };
@@ -309,7 +309,7 @@ pub const NetlinkSocket = struct {
 /// else, return NetlinkError
 fn recv_ack(sock: i32, kern_addr: *const linux.sockaddr.nl) NetlinkError!void {
     var buf: [8192]u8 = undefined;
-    const len = try core.recv(sock, &buf, kern_addr);
+    const len = try sys.recv(sock, &buf, kern_addr);
     if (len == 0) return NetlinkError.NO_DATA;
 
     var offset: usize = 0;
@@ -322,11 +322,7 @@ fn recv_ack(sock: i32, kern_addr: *const linux.sockaddr.nl) NetlinkError!void {
                 const err_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
                 const err_ptr: *const NlMsgErr = @ptrCast(@alignCast(err_buf_ptr));
 
-                if (err_ptr.@"error" == 0) return;
-                if (err_ptr.@"error" == -1) return NetlinkError.NEED_SUDO;
-                if (err_ptr.@"error" == -3) return NetlinkError.NO_EXISTS;
-                if (err_ptr.@"error" == -17) return NetlinkError.EXISTS;
-                if (err_ptr.@"error" == -101) return NetlinkError.ADDR_NOT_AVAIL;
+                try sys.map_err(err_ptr.@"error");
 
                 std.debug.print("ERROR: {any}\n", .{err_ptr});
                 return NetlinkError.UNKNOWN;
@@ -346,7 +342,7 @@ fn recv_route_dump(sock: i32, kern_addr: *const linux.sockaddr.nl) NetlinkError!
     var route_count: usize = 0;
 
     while (true) {
-        const len = try core.recv(sock, &buf, kern_addr);
+        const len = try sys.recv(sock, &buf, kern_addr);
         if (len == 0) break;
 
         var offset: usize = 0;
@@ -359,11 +355,10 @@ fn recv_route_dump(sock: i32, kern_addr: *const linux.sockaddr.nl) NetlinkError!
                 const err_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
                 const err_ptr: *const NlMsgErr = @ptrCast(@alignCast(err_buf_ptr));
 
+                //TODO: lift buffer to user level
                 if (err_ptr.@"error" == 0) return route_buf[0..route_count];
-                if (err_ptr.@"error" == -1) return NetlinkError.NEED_SUDO;
-                if (err_ptr.@"error" == -3) return NetlinkError.NO_EXISTS;
-                if (err_ptr.@"error" == -17) return NetlinkError.EXISTS;
-                if (err_ptr.@"error" == -101) return NetlinkError.ADDR_NOT_AVAIL;
+
+                try sys.map_err(err_ptr.@"error");
 
                 std.debug.print("ERROR: {any}\n", .{err_ptr});
                 return NetlinkError.UNKNOWN;
