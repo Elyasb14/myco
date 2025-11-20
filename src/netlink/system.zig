@@ -15,16 +15,14 @@ pub fn recv(fd: i32, buf: []u8, addr: *const linux.sockaddr.nl) !usize {
 }
 
 pub fn map_err(rc: i32) nl.NetlinkError!void {
-    const e = std.posix.errno(rc);
-
-    switch (e) {
-        .PERM => return nl.NetlinkError.NEED_SUDO,
-        .NOENT => return nl.NetlinkError.NO_EXISTS,
-        .EXIST => return nl.NetlinkError.EXISTS,
-        .ADDRNOTAVAIL => return nl.NetlinkError.ADDR_NOT_AVAIL,
-        .RANGE => return nl.NetlinkError.TOOBIG,
+    switch (rc) {
+        -1 => return nl.NetlinkError.NEED_SUDO,
+        -3 => return nl.NetlinkError.NO_EXISTS,
+        -17 => return nl.NetlinkError.EXISTS,
+        -34 => return nl.NetlinkError.TOOBIG,
+        -101 => return nl.NetlinkError.ADDR_NOT_AVAIL,
         else => {
-            std.debug.print("ERROR: {d}\n", .{rc});
+            std.debug.print("ERROR: {any}\n", .{rc});
             return nl.NetlinkError.UNKNOWN;
         },
     }

@@ -8,7 +8,7 @@ pub fn main() !void {
 
     const route_info = nl.RouteInfo{
         .dst = .{ 1, 1, 1, 2 },
-        .gw = .{ 10, 0, 2, 1 },
+        .gw = .{ 10, 1, 2, 1 },
         .oif = 2,
         .metric = 100,
     };

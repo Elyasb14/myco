@@ -86,8 +86,11 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[offset .. offset + @sizeOf(c.ifinfomsg)], std.mem.asBytes(&ifimsg));
         offset += @sizeOf(c.ifinfomsg);
 
+        add_rtattr(&buf, &offset, c.IFLA_IFNAME, "wg0"); // interface name
+
+        const nested_start = add_rtattr_nested_start(&buf, &offset, c.IFLA_LINKINFO);
         add_rtattr(&buf, &offset, c.IFLA_INFO_KIND, "wireguard");
-        add_rtattr(&buf, &offset, c.IFLA_LINKINFO, "wg0");
+        add_rtattr_nested_end(&buf, nested_start, &offset);
 
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
@@ -478,4 +481,22 @@ fn parse_addr_attrs(buf: []u8) AddrInfo {
         offset += @intCast(c.RTA_ALIGN(rta.rta_len));
     }
     return info;
+}
+
+fn add_rtattr_nested_start(buf: []u8, offset: *usize, rta_type: c.ushort) usize {
+    const start = offset.*;
+    // Reserve outer header
+    const rta = c.rtattr{
+        .rta_len = @intCast(@sizeOf(c.rtattr)), // temp, will patch later
+        .rta_type = rta_type | @as(c.ushort, @intCast(c.NLA_F_NESTED)),
+    };
+    @memcpy(buf[offset.* .. offset.* + @sizeOf(c.rtattr)], std.mem.asBytes(&rta));
+    offset.* += @sizeOf(c.rtattr);
+    return start;
+}
+
+fn add_rtattr_nested_end(buf: []u8, start: usize, offset: *usize) void {
+    const len = offset.* - start;
+    const rta: *c.rtattr = @ptrCast(@alignCast(&buf[start]));
+    rta.rta_len = @intCast(len);
 }
