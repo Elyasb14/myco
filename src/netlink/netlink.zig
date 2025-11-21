@@ -202,7 +202,7 @@ pub const NetlinkSocket = struct {
         try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
         recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
             NetlinkError.ADDR_NOT_AVAIL => {
-                std.log.err("\x1b[31mgateway or dst addr not availabe to route...\x1b[0m gw: {any}, dst: {any}", .{ info.gw.?, info.dst.? });
+                std.log.err("\x1b[31mgateway or dst addr not availabe to add route...\x1b[0m gw: {any}, dst: {any}", .{ info.gw.?, info.dst.? });
                 return err;
             },
             else => return err,
@@ -239,7 +239,18 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
         try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
-        try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
+        recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
+            NetlinkError.ADDR_NOT_AVAIL => {
+                std.log.err("\x1b[31mgateway or dst addr not availabe to del route...\x1b[0m gw: {any}, dst: {any}", .{ info.gw.?, info.dst.? });
+                return err;
+            },
+
+            NetlinkError.NO_EXISTS => {
+                std.log.err("\x1b[31mno such route exists to delete...\x1b[0m gw: {any}, dst: {any}", .{ info.gw.?, info.dst.? });
+                return err;
+            },
+            else => return err,
+        };
     }
 
     pub fn dump_routing_table(nl_sock: NetlinkSocket, out: []RouteInfo) !usize {
