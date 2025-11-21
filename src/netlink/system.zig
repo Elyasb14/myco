@@ -1,3 +1,5 @@
+//! system abstractions
+
 const std = @import("std");
 const linux = std.os.linux;
 const nl = @import("netlink.zig");
@@ -14,6 +16,7 @@ pub fn recv(fd: i32, buf: []u8, addr: *const linux.sockaddr.nl) !usize {
     return @intCast(n);
 }
 
+/// maps error return codes to zig error set
 pub fn map_err(rc: i32) nl.NetlinkError!void {
     switch (rc) {
         -1 => return nl.NetlinkError.NEED_SUDO,
