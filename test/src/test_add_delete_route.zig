@@ -13,15 +13,15 @@ pub fn main() !void {
         .metric = 100,
     };
 
-    // var route_buf_pre: [24]nl.RouteInfo = undefined;
+    var route_buf_pre: [24]nl.RouteInfo = undefined;
     var route_buf_post: [24]nl.RouteInfo = undefined;
 
-    // try nl_sock.add_route(route_info);
-    // const n = try nl_sock.dump_routing_table(&route_buf_pre);
-    // const routes = route_buf_pre[0..n];
-    // for (routes) |x| {
-    //     std.debug.print("{any}\n", .{x});
-    // }
+    try nl_sock.add_route(route_info);
+    const n = try nl_sock.dump_routing_table(&route_buf_pre);
+    const routes = route_buf_pre[0..n];
+    for (routes) |x| {
+        std.debug.print("{any}\n", .{x});
+    }
 
     try nl_sock.del_route(route_info);
     const m = try nl_sock.dump_routing_table(&route_buf_post);

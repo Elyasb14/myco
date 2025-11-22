@@ -8,7 +8,7 @@ pub fn main() !void {
 
     const addr_bytes: [4]u8 = .{ 10, 225, 139, 7 };
     const addr_info = nl.AddrInfo{
-        .if_index = 2,
+        .if_index = 7,
         .prefix_len = 26,
         .address = addr_bytes,
     };

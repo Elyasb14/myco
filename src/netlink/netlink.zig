@@ -148,7 +148,7 @@ pub const NetlinkSocket = struct {
         };
     }
 
-    pub fn dump_links(nl_sock: NetlinkSocket, out: []u8) void {
+    pub fn dump_links(nl_sock: NetlinkSocket, out: []LinkInfo) !void {
         _ = out;
         var buf: [@sizeOf(c.nlmsghdr) + @sizeOf(c.ifinfomsg)]u8 = undefined;
         var offset: usize = 0;
@@ -370,7 +370,13 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
         try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
-        try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
+        recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
+            NetlinkError.NODEV => {
+                std.log.err("\x1b[31mno such dev (if_index)\x1b[0m: {d}", .{addr.if_index});
+                return err;
+            },
+            else => return err,
+        };
     }
 
     pub fn del_addr(nl_sock: NetlinkSocket, addr: AddrInfo) !void {

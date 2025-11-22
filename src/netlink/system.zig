@@ -1,4 +1,4 @@
-//! system abstractions
+//! system helpers
 
 const std = @import("std");
 const linux = std.os.linux;
@@ -16,7 +16,8 @@ pub fn recv(fd: i32, buf: []u8, addr: *const linux.sockaddr.nl) !usize {
     return @intCast(n);
 }
 
-/// maps error return codes to zig error set
+/// maps error return codes to zig error set defined in netlink.zig
+/// we get these rcs from the extern struct NLMsgErr.@"error"
 pub fn map_err(rc: i32) nl.NetlinkError!void {
     switch (rc) {
         -1 => return nl.NetlinkError.NEED_SUDO,
