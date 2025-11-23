@@ -26,6 +26,7 @@ pub fn map_err(rc: i32) nl.NetlinkError!void {
         -19 => return nl.NetlinkError.NODEV,
         -34 => return nl.NetlinkError.TOOBIG,
         -95 => return nl.NetlinkError.OP_NOT_SUPPORTED,
+        -99 => return nl.NetlinkError.ADDR_NOT_AVAIL,
         -101 => return nl.NetlinkError.ADDR_NOT_AVAIL,
         else => {
             std.debug.print("ERROR: {any}\n", .{rc});

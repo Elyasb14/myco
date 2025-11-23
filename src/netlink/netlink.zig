@@ -411,7 +411,17 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
         try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
-        try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
+        recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
+            NetlinkError.NODEV => {
+                std.log.err("\x1b[31mno such dev (if_index)\x1b[0m: {d}", .{addr.if_index});
+                return err;
+            },
+            NetlinkError.ADDR_NOT_AVAIL => {
+                std.log.err("\x1b[31mcannot delete requested address...\x1b[0m addr: {any}, if_index: {d}", .{ addr.address, addr.if_index });
+                return err;
+            },
+            else => return err,
+        };
     }
 };
 
