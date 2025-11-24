@@ -21,14 +21,16 @@ const NlMsgErr = extern struct {
 };
 
 pub const LinkInfo = struct {
-    name: []const u8,
-    kind: ?[]const u8 = null,
-    index: c_int,
-
-    // storing this means we store the interface index twice
-    addrs: ?[]const AddrInfo = null,
+    name: []const u8, // required
+    kind: ?[]const u8 = null, // e.g. "dummy", "vlan", "wireguard"
+    mtu: ?u32 = null,
+    address: ?[]const u8 = null, // raw 6-byte MAC
+    link: ?i32 = null, // parent ifindex, e.g. VLAN on top of eth0
+    flags: u32 = 0, // IFF_UP, IFF_MULTICAST, etc
+    change_mask: u32 = 0xffffffff, // usually 0xffffffff means “set all”
+    // for kind-specific data, use this as an opaque blob
+    linkinfo_data: ?[]const u8 = null,
 };
-
 pub const AddrInfo = struct {
     if_index: u32, // interface index
     family: u8 = c.AF_INET,
@@ -92,7 +94,7 @@ pub const NetlinkSocket = struct {
         // ifi_index is the unique interface index (since Linux 3.7,
         // it is possible to feed a nonzero value with the RTM_NEWLINK
         // message, thus creating a link with the given ifindex)
-        const ifimsg = c.ifinfomsg{ .ifi_index = info.index };
+        const ifimsg = c.ifinfomsg{};
 
         @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
         offset += @sizeOf(c.nlmsghdr);
@@ -159,6 +161,9 @@ pub const NetlinkSocket = struct {
         };
     }
 
+    fn enable_link() void {}
+    fn disable_link() void {}
+
     pub fn dump_links(nl_sock: NetlinkSocket, out: []LinkInfo) !usize {
         var buf: [8192 * 2]u8 align(@alignOf(c.nlmsghdr)) = undefined;
         var offset: usize = 0;
@@ -208,9 +213,7 @@ pub const NetlinkSocket = struct {
                     // FIXME: This differs from the other parse functions in that I have to create the struct before parsing
                     // the other parse functions return the relevant struct
                     // this one takes a pointer, modifies it, then returns void
-                    var link = LinkInfo{ .name = "", .index = 0 };
-                    parse_link_attrs(attr_buf, &link);
-                    link.index = if_infomsg_msg.ifi_index;
+                    const link = parse_link_attrs(attr_buf);
 
                     out[count] = link;
                     count += 1;
@@ -565,8 +568,9 @@ fn fill_route_buf(sock: i32, kern_addr: *const linux.sockaddr.nl, out: []RouteIn
     return route_count;
 }
 
-fn parse_link_attrs(buf: []u8, out: *LinkInfo) void {
+fn parse_link_attrs(buf: []u8) LinkInfo {
     var off: usize = 0;
+    var link: LinkInfo = .{ .name = "" };
     while (off + @sizeOf(c.rtattr) <= buf.len) {
         const rta: *const c.rtattr = @ptrCast(@alignCast(&buf[off]));
         if (rta.rta_len == 0) break;
@@ -575,13 +579,14 @@ fn parse_link_attrs(buf: []u8, out: *LinkInfo) void {
         const data = buf[off + @sizeOf(c.rtattr) .. off + @sizeOf(c.rtattr) + data_len];
 
         switch (rta.rta_type) {
-            c.IFLA_IFNAME => out.name = data,
-            c.IFLA_INFO_KIND => out.kind = data,
+            c.IFLA_IFNAME => link.name = data,
+            c.IFLA_INFO_KIND => link.kind = data,
             else => {},
         }
 
         off += @intCast(c.RTA_ALIGN(rta.rta_len));
     }
+    return link;
 }
 
 fn parse_route_attrs(buf: []u8) RouteInfo {
