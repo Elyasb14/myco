@@ -16,7 +16,8 @@ const c = @cImport({
 
 pub const NetlinkError = error{ NEED_SUDO, NO_EXISTS, EXISTS, UNKNOWN, NO_DATA, ADDR_NOT_AVAIL, TOOBIG, OP_NOT_SUPPORTED, NODEV };
 
-/// --- System I/O interface ---
+/// system i/o interface
+/// used for testing right now so we don't talk to the kernel and need sudo
 pub const NetlinkSys = struct {
     socket: fn (domain: i32, typ: i32, protocol: i32) i32,
     bind: fn (sock: i32, addr: *const linux.sockaddr.nl, len: usize) i32,
@@ -54,9 +55,10 @@ pub const RouteInfo = struct {
 pub const NetlinkSocket = struct {
     nl_sock: i32,
     kern_addr: linux.sockaddr.nl,
+    sys: *NetlinkSys,
 
-    pub fn open(protocol: u32) !NetlinkSocket {
-        const sock: i32 = @intCast(linux.socket(linux.AF.NETLINK, linux.SOCK.RAW, protocol));
+    pub fn open(protocol: u32, sys_if: NetlinkSys) !NetlinkSocket {
+        const sock: i32 = @intCast(sys_if.socket(linux.AF.NETLINK, linux.SOCK.RAW, protocol));
 
         const kern_addr = linux.sockaddr.nl{
             .family = linux.AF.NETLINK,
@@ -77,7 +79,7 @@ pub const NetlinkSocket = struct {
     }
 
     pub fn close(sock: NetlinkSocket) void {
-        _ = linux.close(@intCast(sock.nl_sock));
+        _ = sock.sys.close(@intCast(sock.nl_sock));
     }
 
     pub fn add_link(nl_sock: NetlinkSocket, info: LinkInfo) !void {
@@ -108,7 +110,7 @@ pub const NetlinkSocket = struct {
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
-        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
+        try nl_sock.sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
         recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
             NetlinkError.OP_NOT_SUPPORTED => {
                 std.log.err("\x1b[31mlink type not supported\x1b[0m: {s}", .{info.kind});
@@ -146,7 +148,7 @@ pub const NetlinkSocket = struct {
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
-        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
+        try nl_sock.sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
         recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
             NetlinkError.NODEV => {
                 std.log.err("\x1b[31mno such device name\x1b[0m: {s}", .{info.name});
@@ -176,7 +178,7 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[offset .. offset + @sizeOf(c.ifinfomsg)], std.mem.asBytes(&ifimsg));
         offset += @sizeOf(c.ifinfomsg);
 
-        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+        try nl_sock.sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
     }
 
     pub fn add_route(nl_sock: NetlinkSocket, info: RouteInfo) !void {
@@ -207,7 +209,7 @@ pub const NetlinkSocket = struct {
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
-        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
+        try nl_sock.sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
         recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
             NetlinkError.ADDR_NOT_AVAIL => {
                 std.log.err("\x1b[31mgateway or dst addr not availabe to add route...\x1b[0m gw: {any}, dst: {any}", .{ info.gw.?, info.dst.? });
@@ -246,7 +248,7 @@ pub const NetlinkSocket = struct {
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
-        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+        try nl_sock.sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
         recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
             NetlinkError.ADDR_NOT_AVAIL => {
                 std.log.err("\x1b[31mgateway or dst addr not availabe to del route...\x1b[0m gw: {any}, dst: {any}", .{ info.gw.?, info.dst.? });
@@ -311,10 +313,10 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[offset .. offset + @sizeOf(c.ifaddrmsg)], std.mem.asBytes(&ifa));
         offset += @sizeOf(c.ifaddrmsg);
 
-        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+        try nl_sock.sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
 
         while (true) {
-            const len = try sys.recv(nl_sock.nl_sock, &buf, &nl_sock.kern_addr);
+            const len = try nl_sock.sys.recv(nl_sock.nl_sock, &buf, &nl_sock.kern_addr);
             if (len == 0) break;
 
             var off: usize = 0;
@@ -377,7 +379,7 @@ pub const NetlinkSocket = struct {
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
-        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+        try nl_sock.sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
         recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
             NetlinkError.NODEV => {
                 std.log.err("\x1b[31mno such dev (if_index)\x1b[0m: {d}", .{addr.if_index});
@@ -418,7 +420,7 @@ pub const NetlinkSocket = struct {
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
 
-        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+        try nl_sock.sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
         recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
             NetlinkError.NODEV => {
                 std.log.err("\x1b[31mno such dev (if_index)\x1b[0m: {d}", .{addr.if_index});
