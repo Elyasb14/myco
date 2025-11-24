@@ -15,7 +15,7 @@ pub fn main() !void {
     const n = try nl_sock.dump_links(&buf);
     const links = buf[0..n];
     for (links) |x| {
-        std.debug.print("LINK: {any}\n", .{x});
+        std.debug.print("LINK NAME: {s}\n", .{x.name});
     }
     try nl_sock.del_link(info2);
 }

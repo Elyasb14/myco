@@ -23,7 +23,7 @@ const NlMsgErr = extern struct {
 
 pub const LinkInfo = struct {
     name: []const u8,
-    kind: []const u8,
+    kind: ?[]const u8 = null,
 };
 
 pub const AddrInfo = struct {
@@ -92,9 +92,11 @@ pub const NetlinkSocket = struct {
 
         add_rtattr(&buf, &offset, c.IFLA_IFNAME, info.name); // interface name
 
-        const nested_start = add_rtattr_nested_start(&buf, &offset, c.IFLA_LINKINFO);
-        add_rtattr(&buf, &offset, c.IFLA_INFO_KIND, info.kind);
-        add_rtattr_nested_end(&buf, nested_start, &offset);
+        if (info.kind) |kind| {
+            const nested_start = add_rtattr_nested_start(&buf, &offset, c.IFLA_LINKINFO);
+            add_rtattr(&buf, &offset, c.IFLA_INFO_KIND, kind);
+            add_rtattr_nested_end(&buf, nested_start, &offset);
+        }
 
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
@@ -102,7 +104,7 @@ pub const NetlinkSocket = struct {
         try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
         recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
             NetlinkError.OP_NOT_SUPPORTED => {
-                std.log.err("\x1b[31mlink type not supported\x1b[0m: {s}", .{info.kind});
+                std.log.err("\x1b[31mlink type not supported\x1b[0m: {s}", .{info.kind.?});
                 return err;
             },
             else => return err,
@@ -131,7 +133,7 @@ pub const NetlinkSocket = struct {
         add_rtattr(&buf, &offset, c.IFLA_IFNAME, info.name); // interface name
 
         const nested_start = add_rtattr_nested_start(&buf, &offset, c.IFLA_LINKINFO);
-        add_rtattr(&buf, &offset, c.IFLA_INFO_KIND, info.kind);
+        add_rtattr(&buf, &offset, c.IFLA_INFO_KIND, info.kind.?);
         add_rtattr_nested_end(&buf, nested_start, &offset);
 
         nlh.nlmsg_len = @intCast(offset);
@@ -189,15 +191,13 @@ pub const NetlinkSocket = struct {
                     const if_infomsg_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
                     const if_infomsg_msg: *const c.ifinfomsg = @ptrCast(@alignCast(if_infomsg_buf_ptr));
 
-                    // const attr_start = @intFromPtr(if_infomsg_msg) + @sizeOf(c.ifinfomsg);
-                    // const attr_len = hdr.nlmsg_len - @sizeOf(c.nlmsghdr) - @sizeOf(c.ifaddrmsg);
-                    // const attr_buf = buf[@intCast(attr_start - @intFromPtr(&buf))..@intCast(attr_start - @intFromPtr(&buf) + attr_len)];
-                    // _ = attr_buf;
+                    const attr_start = @intFromPtr(if_infomsg_msg) + @sizeOf(c.ifinfomsg);
+                    const attr_len = hdr.nlmsg_len - @sizeOf(c.nlmsghdr) - @sizeOf(c.ifinfomsg);
+                    const attr_buf = buf[@intCast(attr_start - @intFromPtr(&buf))..@intCast(attr_start - @intFromPtr(&buf) + attr_len)];
 
-                    std.debug.print("IFINFOMSG: {any}\n", .{if_infomsg_msg});
+                    const link = parse_link_attrs(attr_buf);
 
-                    // out[count] = addr;
-                    _ = out;
+                    out[count] = link;
                     count += 1;
                 }
 
@@ -312,7 +312,7 @@ pub const NetlinkSocket = struct {
         return try fill_route_buf(nl_sock.nl_sock, &nl_sock.kern_addr, out);
     }
 
-    pub fn dump_addresses(nl_sock: NetlinkSocket, out: []AddrInfo) !usize {
+    pub fn dump_addresses(nl_sock: NetlinkSocket, out: []AddrInfo) NetlinkError!usize {
         var buf: [8192]u8 align(@alignOf(c.nlmsghdr)) = undefined;
         var count: usize = 0;
 
@@ -350,7 +350,16 @@ pub const NetlinkSocket = struct {
                 const hdr: *const c.nlmsghdr = @ptrCast(@alignCast(&buf[off]));
 
                 if (hdr.nlmsg_type == c.NLMSG_DONE) return count;
-                if (hdr.nlmsg_type == c.NLMSG_ERROR) return error.UnknownNetlinkError;
+                if (hdr.nlmsg_type == c.NLMSG_ERROR) {
+                    const err_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
+                    const err_ptr: *const NlMsgErr = @ptrCast(@alignCast(err_buf_ptr));
+
+                    if (err_ptr.@"error" == 0) return count;
+                    try sys.map_err(err_ptr.@"error");
+
+                    return NetlinkError.UNKNOWN;
+                }
+
                 if (hdr.nlmsg_type == c.RTM_NEWADDR) {
                     const if_addr_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
                     const ifa_msg: *const c.ifaddrmsg = @ptrCast(@alignCast(if_addr_buf_ptr));
@@ -539,6 +548,29 @@ fn fill_route_buf(sock: i32, kern_addr: *const linux.sockaddr.nl, out: []RouteIn
         }
     }
     return route_count;
+}
+
+fn parse_link_attrs(buf: []u8) LinkInfo {
+    var link: LinkInfo = .{ .name = "", .kind = null };
+
+    var off: usize = 0;
+    while (off + @sizeOf(c.rtattr) <= buf.len) {
+        const rta: *const c.rtattr = @ptrCast(@alignCast(&buf[off]));
+        if (rta.rta_len == 0) break;
+
+        const data_len: usize = @as(usize, @intCast(rta.rta_len)) - @sizeOf(c.rtattr);
+        const data = buf[off + @sizeOf(c.rtattr) .. off + @sizeOf(c.rtattr) + data_len];
+
+        switch (rta.rta_type) {
+            c.IFLA_IFNAME => link.name = data,
+            c.IFLA_INFO_KIND => link.kind = data,
+            else => {},
+        }
+
+        off += @intCast(c.RTA_ALIGN(rta.rta_len));
+    }
+
+    return link;
 }
 
 fn parse_route_attrs(buf: []u8) RouteInfo {
