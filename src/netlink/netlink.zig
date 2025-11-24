@@ -147,11 +147,11 @@ pub const NetlinkSocket = struct {
         };
     }
 
-    pub fn dump_links(nl_sock: NetlinkSocket, out: []LinkInfo) !void {
-        _ = out;
-        var buf: [@sizeOf(c.nlmsghdr) + @sizeOf(c.ifinfomsg)]u8 = undefined;
+    pub fn dump_links(nl_sock: NetlinkSocket, out: []LinkInfo) !usize {
+        var buf: [8192 * 2]u8 align(@alignOf(c.nlmsghdr)) = undefined;
         var offset: usize = 0;
 
+        var count: usize = 0;
         const nlh = c.nlmsghdr{
             .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_GETLINK)),
             .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_DUMP,
@@ -168,6 +168,43 @@ pub const NetlinkSocket = struct {
         offset += @sizeOf(c.ifinfomsg);
 
         try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+
+        while (true) {
+            const len = try sys.recv(nl_sock.nl_sock, &buf, &nl_sock.kern_addr);
+            if (len == 0) break;
+
+            var off: usize = 0;
+            while (off < len) {
+                const hdr: *const c.nlmsghdr = @ptrCast(@alignCast(&buf[off]));
+
+                if (hdr.nlmsg_type == c.NLMSG_DONE) return count;
+                if (hdr.nlmsg_type == c.NLMSG_ERROR) {
+                    const err_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
+                    const err_ptr: *const NlMsgErr = @ptrCast(@alignCast(err_buf_ptr));
+                    if (err_ptr.@"error" == 0) return count;
+                    try sys.map_err(err_ptr.@"error");
+                    return NetlinkError.UNKNOWN;
+                }
+                if (hdr.nlmsg_type == c.RTM_NEWLINK) {
+                    const if_infomsg_buf_ptr: *const anyopaque = @ptrFromInt(@intFromPtr(hdr) + @sizeOf(c.nlmsghdr));
+                    const if_infomsg_msg: *const c.ifinfomsg = @ptrCast(@alignCast(if_infomsg_buf_ptr));
+
+                    // const attr_start = @intFromPtr(if_infomsg_msg) + @sizeOf(c.ifinfomsg);
+                    // const attr_len = hdr.nlmsg_len - @sizeOf(c.nlmsghdr) - @sizeOf(c.ifaddrmsg);
+                    // const attr_buf = buf[@intCast(attr_start - @intFromPtr(&buf))..@intCast(attr_start - @intFromPtr(&buf) + attr_len)];
+                    // _ = attr_buf;
+
+                    std.debug.print("IFINFOMSG: {any}\n", .{if_infomsg_msg});
+
+                    // out[count] = addr;
+                    _ = out;
+                    count += 1;
+                }
+
+                off += @intCast(c.NLMSG_ALIGN(hdr.nlmsg_len));
+            }
+        }
+        return count;
     }
 
     pub fn add_route(nl_sock: NetlinkSocket, info: RouteInfo) !void {
@@ -253,7 +290,7 @@ pub const NetlinkSocket = struct {
     }
 
     pub fn dump_routing_table(nl_sock: NetlinkSocket, out: []RouteInfo) !usize {
-        var buf: [@sizeOf(c.nlmsghdr) + @sizeOf(c.rtmsg)]u8 = undefined;
+        var buf: [8192]u8 align(@alignOf(c.nlmsghdr)) = undefined;
         var offset: usize = 0;
 
         const nlh = c.nlmsghdr{
@@ -276,7 +313,7 @@ pub const NetlinkSocket = struct {
     }
 
     pub fn dump_addresses(nl_sock: NetlinkSocket, out: []AddrInfo) !usize {
-        var buf: [8192]u8 = undefined;
+        var buf: [8192]u8 align(@alignOf(c.nlmsghdr)) = undefined;
         var count: usize = 0;
 
         // Prepare the netlink header
