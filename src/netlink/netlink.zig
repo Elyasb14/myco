@@ -91,9 +91,6 @@ pub const NetlinkSocket = struct {
             .nlmsg_seq = @intCast(std.time.timestamp()),
         };
 
-        // ifi_index is the unique interface index (since Linux 3.7,
-        // it is possible to feed a nonzero value with the RTM_NEWLINK
-        // message, thus creating a link with the given ifindex)
         const ifimsg = c.ifinfomsg{};
 
         @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
@@ -103,6 +100,18 @@ pub const NetlinkSocket = struct {
         offset += @sizeOf(c.ifinfomsg);
 
         add_rtattr(&buf, &offset, c.IFLA_IFNAME, info.name); // interface name
+
+        if (info.mtu) |mtu| {
+            add_rtattr(&buf, &offset, c.IFLA_MTU, std.mem.asBytes(&mtu));
+        }
+
+        if (info.address) |addr| {
+            add_rtattr(&buf, &offset, c.IFLA_ADDRESS, addr);
+        }
+
+        if (info.link) |parent| {
+            add_rtattr(&buf, &offset, c.IFLA_LINK, std.mem.asBytes(&parent));
+        }
 
         if (info.kind) |kind| {
             const nested_start = add_rtattr_nested_start(&buf, &offset, c.IFLA_LINKINFO);
