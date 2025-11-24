@@ -13,18 +13,18 @@ pub fn main() !void {
         .address = addr_bytes,
     };
 
-    // var addr_buf_pre: [24]nl.AddrInfo = undefined;
+    var addr_buf_pre: [24]nl.AddrInfo = undefined;
     var addr_buf_post: [24]nl.AddrInfo = undefined;
 
-    // std.debug.print("*** NEW ADDR ***\n", .{});
-    // try nl_sock.add_addr(addr_info);
-    // const n = try nl_sock.dump_addresses(&addr_buf_pre);
-    // const addrs = addr_buf_pre[0..n];
-    //
-    // for (addrs) |x| {
-    //     std.debug.print("addr: {any}\n", .{x});
-    // }
-    // std.debug.print("\n", .{});
+    std.debug.print("*** NEW ADDR ***\n", .{});
+    try nl_sock.add_addr(addr_info);
+    const n = try nl_sock.dump_addresses(&addr_buf_pre);
+    const addrs = addr_buf_pre[0..n];
+
+    for (addrs) |x| {
+        std.debug.print("addr: {any}\n", .{x});
+    }
+    std.debug.print("\n", .{});
 
     std.debug.print("*** DELETE ADDR ***\n", .{});
     try nl_sock.del_addr(addr_info);

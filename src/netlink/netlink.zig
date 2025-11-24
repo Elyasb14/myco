@@ -31,7 +31,6 @@ pub const AddrInfo = struct {
     family: u8 = c.AF_INET,
     prefix_len: u8, // subnet mask
     address: [4]u8, // full address
-
 };
 
 /// oif: output interface index
@@ -427,6 +426,7 @@ pub const NetlinkSocket = struct {
 
 /// if ack is successful, we return void
 /// else, return NetlinkError
+/// caller should handle the error
 fn recv_ack(sock: i32, kern_addr: *const linux.sockaddr.nl) NetlinkError!void {
     var buf: [8192]u8 = undefined;
     const len = try sys.recv(sock, &buf, kern_addr);
@@ -603,4 +603,19 @@ fn add_rtattr_nested_end(buf: []u8, start: usize, offset: *usize) void {
     const len = offset.* - start;
     const rta: *c.rtattr = @ptrCast(@alignCast(&buf[start]));
     rta.rta_len = @intCast(len);
+}
+
+test "add addr" {
+    const addr = AddrInfo{ .if_index = 1, .address = .{ 192, 168, 33, 1 }, .prefix_len = 24 };
+
+    const sock = try NetlinkSocket.open(linux.NETLINK.ROUTE);
+    defer sock.close();
+
+    try sock.add_addr(addr);
+
+    var addr_buf: [24]AddrInfo = undefined;
+
+    _ = try sock.dump_addresses(&addr_buf);
+
+    try std.testing.expectEqualDeep(addr, addr_buf[1]);
 }
