@@ -23,10 +23,9 @@ const NlMsgErr = extern struct {
 pub const LinkInfo = struct {
     name: []const u8,
     kind: ?[]const u8 = null,
-
     index: c_int,
 
-    // storing this means we store the index twice
+    // storing this means we store the interface index twice
     addrs: ?[]const AddrInfo = null,
 };
 
@@ -77,6 +76,8 @@ pub const NetlinkSocket = struct {
 
     /// only creates a link with a name and kind
     /// does not make it up or down or assign addrs to it
+    /// this is UNSAFE! you can change the state of ifi_index 2
+    /// which is generally your internet connection
     pub fn add_link(nl_sock: NetlinkSocket, info: LinkInfo) !void {
         var buf: [512]u8 = undefined;
         var offset: usize = 0;
