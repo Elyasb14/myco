@@ -75,6 +75,8 @@ pub const NetlinkSocket = struct {
         _ = linux.close(@intCast(sock.nl_sock));
     }
 
+    /// only creates a link with a name and kind
+    /// does not make it up or down or assign addrs to it
     pub fn add_link(nl_sock: NetlinkSocket, info: LinkInfo) !void {
         var buf: [512]u8 = undefined;
         var offset: usize = 0;
@@ -104,14 +106,6 @@ pub const NetlinkSocket = struct {
             add_rtattr(&buf, &offset, c.IFLA_INFO_KIND, kind);
             add_rtattr_nested_end(&buf, nested_start, &offset);
         }
-
-        // if (info.addrs) |addrs| {
-        //     for (addrs) |addr| {
-        //         const nested_start = add_rtattr_nested_start(&buf, &offset, c.IFLA_LINKINFO);
-        //         add_rtattr(&buf, &offset, c.IFLA_ADDRESS, &addr.address);
-        //         add_rtattr_nested_end(&buf, nested_start, &offset);
-        //     }
-        // }
 
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
