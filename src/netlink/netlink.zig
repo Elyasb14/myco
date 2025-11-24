@@ -16,6 +16,15 @@ const c = @cImport({
 
 pub const NetlinkError = error{ NEED_SUDO, NO_EXISTS, EXISTS, UNKNOWN, NO_DATA, ADDR_NOT_AVAIL, TOOBIG, OP_NOT_SUPPORTED, NODEV };
 
+/// --- System I/O interface ---
+pub const NetlinkSys = struct {
+    socket: fn (domain: i32, typ: i32, protocol: i32) i32,
+    bind: fn (sock: i32, addr: *const linux.sockaddr.nl, len: usize) i32,
+    send: fn (sock: i32, buf: []const u8, addr: *const linux.sockaddr.nl) void,
+    recv: fn (sock: i32, buf: []u8, addr: *const linux.sockaddr.nl) usize,
+    close: fn (sock: i32) void,
+};
+
 const NlMsgErr = extern struct {
     @"error": i32,
     msg: c.nlmsghdr,
