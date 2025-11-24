@@ -9,7 +9,6 @@ const sys = @import("system.zig");
 
 const c = @cImport({
     @cInclude("linux/rtnetlink.h");
-    // @cInclude("linux/if.h");
     @cInclude("net/if.h");
     @cInclude("linux/netlink.h");
 });
@@ -24,6 +23,7 @@ const NlMsgErr = extern struct {
 pub const LinkInfo = struct {
     name: []const u8,
     kind: ?[]const u8 = null,
+    index: c_int,
 };
 
 pub const AddrInfo = struct {
@@ -195,7 +195,12 @@ pub const NetlinkSocket = struct {
                     const attr_len = hdr.nlmsg_len - @sizeOf(c.nlmsghdr) - @sizeOf(c.ifinfomsg);
                     const attr_buf = buf[@intCast(attr_start - @intFromPtr(&buf))..@intCast(attr_start - @intFromPtr(&buf) + attr_len)];
 
-                    const link = parse_link_attrs(attr_buf);
+                    // FIXME: This differs from the other parse functions in that I have to create the struct before parsing
+                    // the other parse functions return the relevant struct
+                    // this one takes a pointer, modifies it, then returns void
+                    var link = LinkInfo{ .name = "", .index = 0 };
+                    parse_link_attrs(attr_buf, &link);
+                    link.index = if_infomsg_msg.ifi_index;
 
                     out[count] = link;
                     count += 1;
@@ -550,9 +555,7 @@ fn fill_route_buf(sock: i32, kern_addr: *const linux.sockaddr.nl, out: []RouteIn
     return route_count;
 }
 
-fn parse_link_attrs(buf: []u8) LinkInfo {
-    var link: LinkInfo = .{ .name = "", .kind = null };
-
+fn parse_link_attrs(buf: []u8, out: *LinkInfo) void {
     var off: usize = 0;
     while (off + @sizeOf(c.rtattr) <= buf.len) {
         const rta: *const c.rtattr = @ptrCast(@alignCast(&buf[off]));
@@ -562,15 +565,13 @@ fn parse_link_attrs(buf: []u8) LinkInfo {
         const data = buf[off + @sizeOf(c.rtattr) .. off + @sizeOf(c.rtattr) + data_len];
 
         switch (rta.rta_type) {
-            c.IFLA_IFNAME => link.name = data,
-            c.IFLA_INFO_KIND => link.kind = data,
+            c.IFLA_IFNAME => out.name = data,
+            c.IFLA_INFO_KIND => out.kind = data,
             else => {},
         }
 
         off += @intCast(c.RTA_ALIGN(rta.rta_len));
     }
-
-    return link;
 }
 
 fn parse_route_attrs(buf: []u8) RouteInfo {
