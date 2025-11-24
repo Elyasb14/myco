@@ -590,6 +590,12 @@ fn parse_link_attrs(buf: []u8) LinkInfo {
         switch (rta.rta_type) {
             c.IFLA_IFNAME => link.name = data,
             c.IFLA_INFO_KIND => link.kind = data,
+            c.IFLA_MTU => {
+                if (data.len == 4) {
+                    const arr: *const [4]u8 = @ptrCast(data.ptr);
+                    link.mtu = std.mem.readInt(u32, arr, .little);
+                }
+            },
             else => {},
         }
 
