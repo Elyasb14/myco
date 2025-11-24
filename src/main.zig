@@ -6,8 +6,10 @@ pub fn main() !void {
     const nl_sock = try nl.NetlinkSocket.open(linux.NETLINK.ROUTE);
     defer nl_sock.close();
 
-    const info = nl.LinkInfo{ .kind = "wireguard", .name = "night", .index = 370 };
-    const info2 = nl.LinkInfo{ .kind = "wireguard", .name = "night", .index = 370 };
+    const addr = nl.AddrInfo{ .address = .{ 10, 227, 6, 3 }, .if_index = 3, .prefix_len = 24 };
+
+    const info = nl.LinkInfo{ .kind = "wireguard", .name = "night", .index = 3, .addrs = &[_]nl.AddrInfo{addr} };
+    const info2 = nl.LinkInfo{ .kind = "wireguard", .name = "night", .index = 3, .addrs = &[_]nl.AddrInfo{addr} };
 
     var buf: [24]nl.LinkInfo = undefined;
 

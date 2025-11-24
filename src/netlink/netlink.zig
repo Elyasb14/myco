@@ -23,7 +23,11 @@ const NlMsgErr = extern struct {
 pub const LinkInfo = struct {
     name: []const u8,
     kind: ?[]const u8 = null,
+
     index: c_int,
+
+    // storing this means we store the index twice
+    addrs: ?[]const AddrInfo = null,
 };
 
 pub const AddrInfo = struct {
@@ -82,7 +86,10 @@ pub const NetlinkSocket = struct {
             .nlmsg_seq = @intCast(std.time.timestamp()),
         };
 
-        const ifimsg = c.ifinfomsg{}; // default zero values are fine for now
+        // ifi_index is the unique interface index (since Linux 3.7,
+        // it is possible to feed a nonzero value with the RTM_NEWLINK
+        // message, thus creating a link with the given ifindex)
+        const ifimsg = c.ifinfomsg{ .ifi_index = info.index };
 
         @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
         offset += @sizeOf(c.nlmsghdr);
@@ -97,6 +104,14 @@ pub const NetlinkSocket = struct {
             add_rtattr(&buf, &offset, c.IFLA_INFO_KIND, kind);
             add_rtattr_nested_end(&buf, nested_start, &offset);
         }
+
+        // if (info.addrs) |addrs| {
+        //     for (addrs) |addr| {
+        //         const nested_start = add_rtattr_nested_start(&buf, &offset, c.IFLA_LINKINFO);
+        //         add_rtattr(&buf, &offset, c.IFLA_ADDRESS, &addr.address);
+        //         add_rtattr_nested_end(&buf, nested_start, &offset);
+        //     }
+        // }
 
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
