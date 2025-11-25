@@ -135,6 +135,9 @@ pub const NetlinkSocket = struct {
         };
     }
 
+    /// as far as i can tell this only needs ifname as an arg
+    /// so we could only set c.IFLA_IFNAME and it would delete that interface in theory
+    /// TODO: test deleting every rtattr except for setting c.IFLA_IFNAME
     pub fn del_link(nl_sock: NetlinkSocket, info: LinkInfo) !void {
         var buf: [512]u8 = undefined;
         var offset: usize = 0;
@@ -146,7 +149,7 @@ pub const NetlinkSocket = struct {
             .nlmsg_seq = @intCast(std.time.timestamp()),
         };
 
-        const ifimsg = c.ifinfomsg{}; // default zero values are fine for now
+        const ifimsg = c.ifinfomsg{};
 
         @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
         offset += @sizeOf(c.nlmsghdr);
