@@ -21,16 +21,16 @@ const NlMsgErr = extern struct {
 };
 
 pub const LinkInfo = struct {
-    name: []const u8, // required
-    kind: ?[]const u8 = null, // e.g. "dummy", "vlan", "wireguard"
+    name: []const u8,
     mtu: ?u32 = null,
-    address: ?[]const u8 = null, // raw 6-byte MAC
-    link: ?i32 = null, // parent ifindex, e.g. VLAN on top of eth0
-    flags: u32 = 0, // IFF_UP, IFF_MULTICAST, etc
-    change_mask: u32 = 0xffffffff, // usually 0xffffffff means “set all”
-    // for kind-specific data, use this as an opaque blob
-    linkinfo_data: ?[]const u8 = null,
+    address: ?[]const u8 = null,
+    broadcast: ?[]const u8 = null,
+    parent_index: ?u32 = null, // IFLA_LINK
+    qdisc: ?[]const u8 = null,
+    kind: ?[]const u8 = null, // via IFLA_LINKINFO → IFLA_INFO_KIND
+    tx_qlen: ?u32 = null,
 };
+
 pub const AddrInfo = struct {
     if_index: u32, // interface index
     family: u8 = c.AF_INET,
@@ -109,7 +109,7 @@ pub const NetlinkSocket = struct {
             add_rtattr(&buf, &offset, c.IFLA_ADDRESS, addr);
         }
 
-        if (info.link) |parent| {
+        if (info.parent_index) |parent| {
             add_rtattr(&buf, &offset, c.IFLA_LINK, std.mem.asBytes(&parent));
         }
 
@@ -589,19 +589,54 @@ fn parse_link_attrs(buf: []u8) LinkInfo {
 
         switch (rta.rta_type) {
             c.IFLA_IFNAME => link.name = data,
-            c.IFLA_INFO_KIND => link.kind = data,
             c.IFLA_MTU => {
                 if (data.len == 4) {
                     const arr: *const [4]u8 = @ptrCast(data.ptr);
                     link.mtu = std.mem.readInt(u32, arr, .little);
                 }
             },
+            c.IFLA_ADDRESS => link.address = data,
+            c.IFLA_BROADCAST => link.broadcast = data,
+            c.IFLA_LINK => {
+                if (data.len == 4) {
+                    const arr: *const [4]u8 = @ptrCast(data.ptr);
+                    link.parent_index = std.mem.readInt(u32, arr, .little);
+                }
+            },
+            c.IFLA_LINKINFO => parse_linkinfo(data, &link),
             else => {},
         }
 
         off += @intCast(c.RTA_ALIGN(rta.rta_len));
     }
     return link;
+}
+
+fn parse_linkinfo(buf: []u8, link: *LinkInfo) void {
+    var off: usize = 0;
+
+    while (off + @sizeOf(c.rtattr) <= buf.len) {
+        const rta: *const c.rtattr = @ptrCast(@alignCast(&buf[off]));
+        const rta_len = rta.rta_len;
+        if (rta_len == 0) break;
+
+        const data_len = rta_len - @sizeOf(c.rtattr);
+        const data = buf[off + @sizeOf(c.rtattr) .. off + @sizeOf(c.rtattr) + data_len];
+
+        switch (rta.rta_type) {
+            c.IFLA_INFO_KIND => {
+                link.kind = data;
+            },
+
+            c.IFLA_INFO_DATA => {
+                //TODO: i think stuff like wireguard keys go here?
+            },
+
+            else => {},
+        }
+
+        off += @intCast(c.RTA_ALIGN(rta_len));
+    }
 }
 
 fn parse_route_attrs(buf: []u8) RouteInfo {
