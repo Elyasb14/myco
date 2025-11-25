@@ -6,7 +6,7 @@ pub fn main() !void {
     const nl_sock = try nl.NetlinkSocket.open(linux.NETLINK.ROUTE);
     defer nl_sock.close();
 
-    const info = nl.LinkInfo{ .ifname = "night" };
+    const info = nl.LinkInfo{ .ifname = "night", .kind = "wireguard" };
 
     std.debug.print("*** NEW LINK ***\n", .{});
     var pre_buf: [24]nl.LinkInfo = undefined;

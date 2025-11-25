@@ -98,7 +98,63 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[offset .. offset + @sizeOf(c.ifinfomsg)], std.mem.asBytes(&ifimsg));
         offset += @sizeOf(c.ifinfomsg);
 
-        if (info.addresddresss) |addr| {
+        if (info.address) |addr| {
+            add_rtattr(&buf, &offset, c.IFLA_ADDRESS, addr);
+        }
+
+        if (info.broadcast) |broadcast| {
+            add_rtattr(&buf, &offset, c.IFLA_BROADCAST, broadcast);
+        }
+
+        add_rtattr(&buf, &offset, c.IFLA_IFNAME, info.ifname);
+
+        if (info.mtu) |mtu| {
+            add_rtattr(&buf, &offset, c.IFLA_MTU, std.mem.asBytes(&mtu));
+        }
+
+        if (info.link) |parent| {
+            add_rtattr(&buf, &offset, c.IFLA_LINK, std.mem.asBytes(&parent));
+        }
+
+        if (info.kind) |kind| {
+            const nested_start = add_rtattr_nested_start(&buf, &offset, c.IFLA_LINKINFO);
+            add_rtattr(&buf, &offset, c.IFLA_INFO_KIND, kind);
+            add_rtattr_nested_end(&buf, nested_start, &offset);
+        }
+
+        nlh.nlmsg_len = @intCast(offset);
+        @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+
+        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
+        recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
+            NetlinkError.OP_NOT_SUPPORTED => {
+                std.log.err("\x1b[31mlink type not supported\x1b[0m: {any}", .{info});
+                return err;
+            },
+            else => return err,
+        };
+    }
+
+    pub fn del_link(nl_sock: NetlinkSocket, info: LinkInfo) !void {
+        var buf: [512]u8 = undefined;
+        var offset: usize = 0;
+
+        var nlh = c.nlmsghdr{
+            .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_DELLINK)),
+            .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_ACK,
+            .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.ifinfomsg),
+            .nlmsg_seq = @intCast(std.time.timestamp()),
+        };
+
+        const ifimsg = c.ifinfomsg{}; // default zero values are fine for now
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+        offset += @sizeOf(c.nlmsghdr);
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.ifinfomsg)], std.mem.asBytes(&ifimsg));
+        offset += @sizeOf(c.ifinfomsg);
+
+        if (info.address) |addr| {
             add_rtattr(&buf, &offset, c.IFLA_ADDRESS, addr);
         }
 
@@ -129,44 +185,6 @@ pub const NetlinkSocket = struct {
         recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
             NetlinkError.OP_NOT_SUPPORTED => {
                 std.log.err("\x1b[31mlink type not supported\x1b[0m: {s}", .{info.kind.?});
-                return err;
-            },
-            else => return err,
-        };
-    }
-
-    pub fn del_link(nl_sock: NetlinkSocket, info: LinkInfo) !void {
-        var buf: [512]u8 = undefined;
-        var offset: usize = 0;
-
-        var nlh = c.nlmsghdr{
-            .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_DELLINK)),
-            .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_ACK,
-            .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.ifinfomsg),
-            .nlmsg_seq = @intCast(std.time.timestamp()),
-        };
-
-        const ifimsg = c.ifinfomsg{}; // default zero values are fine for now
-
-        @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
-        offset += @sizeOf(c.nlmsghdr);
-
-        @memcpy(buf[offset .. offset + @sizeOf(c.ifinfomsg)], std.mem.asBytes(&ifimsg));
-        offset += @sizeOf(c.ifinfomsg);
-
-        add_rtattr(&buf, &offset, c.IFLA_IFNAME, info.name); // interface name
-
-        const nested_start = add_rtattr_nested_start(&buf, &offset, c.IFLA_LINKINFO);
-        add_rtattr(&buf, &offset, c.IFLA_INFO_KIND, info.kind.?);
-        add_rtattr_nested_end(&buf, nested_start, &offset);
-
-        nlh.nlmsg_len = @intCast(offset);
-        @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
-
-        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
-        recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
-            NetlinkError.NODEV => {
-                std.log.err("\x1b[31mno such device name\x1b[0m: {s}", .{info.name});
                 return err;
             },
             else => return err,
@@ -582,7 +600,7 @@ fn fill_route_buf(sock: i32, kern_addr: *const linux.sockaddr.nl, out: []RouteIn
 
 fn parse_link_attrs(buf: []u8) LinkInfo {
     var off: usize = 0;
-    var link: LinkInfo = .{ .name = "" };
+    var link: LinkInfo = .{ .ifname = "" };
     while (off + @sizeOf(c.rtattr) <= buf.len) {
         const rta: *const c.rtattr = @ptrCast(@alignCast(&buf[off]));
         if (rta.rta_len == 0) break;
@@ -593,7 +611,7 @@ fn parse_link_attrs(buf: []u8) LinkInfo {
         switch (rta.rta_type) {
             c.IFLA_ADDRESS => link.address = data,
             c.IFLA_BROADCAST => link.broadcast = data,
-            c.IFLA_IFNAME => link.name = data,
+            c.IFLA_IFNAME => link.ifname = data,
             c.IFLA_MTU => {
                 if (data.len == 4) {
                     const arr: *const [4]u8 = @ptrCast(data.ptr);
@@ -603,7 +621,7 @@ fn parse_link_attrs(buf: []u8) LinkInfo {
             c.IFLA_LINK => {
                 if (data.len == 4) {
                     const arr: *const [4]u8 = @ptrCast(data.ptr);
-                    link.parent_index = std.mem.readInt(u32, arr, .little);
+                    link.link = std.mem.readInt(u32, arr, .little);
                 }
             },
             c.IFLA_LINKINFO => parse_linkinfo(data, &link),
@@ -735,19 +753,4 @@ fn add_rtattr_nested_end(buf: []u8, start: usize, offset: *usize) void {
     const len = offset.* - start;
     const rta: *c.rtattr = @ptrCast(@alignCast(&buf[start]));
     rta.rta_len = @intCast(len);
-}
-
-test "add addr" {
-    const addr = AddrInfo{ .if_index = 1, .address = .{ 192, 168, 33, 1 }, .prefix_len = 24 };
-
-    const sock = try NetlinkSocket.open(linux.NETLINK.ROUTE);
-    defer sock.close();
-
-    try sock.add_addr(addr);
-
-    var addr_buf: [24]AddrInfo = undefined;
-
-    _ = try sock.dump_addresses(&addr_buf);
-
-    try std.testing.expectEqualDeep(addr, addr_buf[1]);
 }

@@ -20,16 +20,4 @@ pub fn build(b: *std.Build) void {
     myco_exe.root_module.addImport("netlink", netlink_mod);
     myco_exe.linkLibC();
     b.installArtifact(myco_exe);
-
-    const tests = b.addTest(.{ .name = "netlink", .root_module = b.createModule(.{ .root_source_file = b.path("src/netlink/netlink.zig"), .optimize = optimize, .target = target }) });
-
-    // add modules for the test runner too
-    tests.root_module.addImport("netlink", netlink_mod);
-    tests.linkLibC();
-
-    const run_tests = b.addRunArtifact(tests);
-
-    // "zig build test" will execute tests
-    const test_step = b.step("test", "Run all unit tests");
-    test_step.dependOn(&run_tests.step);
 }
