@@ -75,10 +75,8 @@ pub const NetlinkSocket = struct {
         _ = linux.close(@intCast(sock.nl_sock));
     }
 
-    /// only creates a link with a name and kind
-    /// does not make it up or down or assign addrs to it
-    /// this is UNSAFE! you can change the state of ifi_index 2
-    /// which is generally your internet connection
+    /// the only required LinkInfo field is ifname
+    /// everything is default set to null if not provided
     pub fn add_link(nl_sock: NetlinkSocket, info: LinkInfo) !void {
         var buf: [512]u8 = undefined;
         var offset: usize = 0;
@@ -117,6 +115,7 @@ pub const NetlinkSocket = struct {
         }
 
         if (info.kind) |kind| {
+            // TODO: do we need to add more things to this nested atttr?
             const nested_start = add_rtattr_nested_start(&buf, &offset, c.IFLA_LINKINFO);
             add_rtattr(&buf, &offset, c.IFLA_INFO_KIND, kind);
             add_rtattr_nested_end(&buf, nested_start, &offset);
@@ -136,8 +135,7 @@ pub const NetlinkSocket = struct {
     }
 
     /// as far as i can tell this only needs ifname as an arg
-    /// so we could only set c.IFLA_IFNAME and it would delete that interface in theory
-    /// TODO: test deleting every rtattr except for setting c.IFLA_IFNAME
+    /// so we only set the c.IFLA_IFNAME rtattr
     pub fn del_link(nl_sock: NetlinkSocket, info: LinkInfo) !void {
         var buf: [512]u8 = undefined;
         var offset: usize = 0;
@@ -157,29 +155,7 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[offset .. offset + @sizeOf(c.ifinfomsg)], std.mem.asBytes(&ifimsg));
         offset += @sizeOf(c.ifinfomsg);
 
-        if (info.address) |addr| {
-            add_rtattr(&buf, &offset, c.IFLA_ADDRESS, addr);
-        }
-
-        if (info.broadcast) |broadcast| {
-            add_rtattr(&buf, &offset, c.IFLA_BROADCAST, broadcast);
-        }
-
         add_rtattr(&buf, &offset, c.IFLA_IFNAME, info.ifname);
-
-        if (info.mtu) |mtu| {
-            add_rtattr(&buf, &offset, c.IFLA_MTU, std.mem.asBytes(&mtu));
-        }
-
-        if (info.link) |parent| {
-            add_rtattr(&buf, &offset, c.IFLA_LINK, std.mem.asBytes(&parent));
-        }
-
-        if (info.kind) |kind| {
-            const nested_start = add_rtattr_nested_start(&buf, &offset, c.IFLA_LINKINFO);
-            add_rtattr(&buf, &offset, c.IFLA_INFO_KIND, kind);
-            add_rtattr_nested_end(&buf, nested_start, &offset);
-        }
 
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
@@ -296,7 +272,6 @@ pub const NetlinkSocket = struct {
         };
     }
 
-    /// need to add proper error handling here for when we delete a route we don't need to delete
     pub fn del_route(nl_sock: NetlinkSocket, info: RouteInfo) !void {
         var offset: usize = 0;
         var buf: [512]u8 = undefined;
