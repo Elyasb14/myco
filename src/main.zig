@@ -6,14 +6,11 @@ pub fn main() !void {
     const nl_sock = try nl.NetlinkSocket.open(linux.NETLINK.ROUTE);
     defer nl_sock.close();
 
-    const info = nl.LinkInfo{ .ifname = "night", .kind = "wireguard", .mtu = 12 };
+    const info = nl.LinkInfo{ .ifname = "wg0", .kind = "wireguard", .mtu = 12, .index = 12 };
+    var addr = nl.AddrInfo{ .if_index = info.index.?, .prefix_len = 24, .address = .{ 192, 168, 33, 1 } };
 
-    std.debug.print("*** NEW LINK ***\n", .{});
-    var pre_buf: [24]nl.LinkInfo = undefined;
     try nl_sock.add_link(info);
-    const n = try nl_sock.dump_links(&pre_buf);
-    const links = pre_buf[0..n];
-    for (links) |x| {
-        std.debug.print("{any}\n", .{x});
-    }
+
+    try nl_sock.enable_link(info.index.?);
+    try nl_sock.assign_link_ip(info, &addr);
 }

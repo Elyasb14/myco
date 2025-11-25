@@ -13,7 +13,7 @@ const c = @cImport({
     @cInclude("linux/netlink.h");
 });
 
-pub const NetlinkError = error{ NEED_SUDO, NO_EXISTS, EXISTS, UNKNOWN, NO_DATA, ADDR_NOT_AVAIL, TOOBIG, OP_NOT_SUPPORTED, NODEV };
+pub const NetlinkError = error{ NEED_SUDO, NO_EXISTS, EXISTS, UNKNOWN, NO_DATA, ADDR_NOT_AVAIL, TOOBIG, OP_NOT_SUPPORTED, NODEV, INVALID_ARG };
 
 const NlMsgErr = extern struct {
     @"error": i32,
@@ -28,6 +28,7 @@ pub const LinkInfo = struct {
     link: ?u32 = null, // c.IFLA_LINK
     kind: ?[]const u8 = null, // c.IFLA_LINKINFO → c.IFLA_INFO_KIND
     info_data: ?[]u8 = null, // c.IFLA_LINKINFO -> c.IFLA_INFO_DATA
+    index: ?u32 = null,
 };
 
 pub const AddrInfo = struct {
@@ -88,7 +89,9 @@ pub const NetlinkSocket = struct {
             .nlmsg_seq = @intCast(std.time.timestamp()),
         };
 
-        const ifimsg = c.ifinfomsg{ .ifi_change = 0xFFFFFFFF };
+        var ifimsg = c.ifinfomsg{ .ifi_change = 0xFFFFFFFF };
+
+        if (info.index) |idx| ifimsg.ifi_index = @intCast(idx);
 
         @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
         offset += @sizeOf(c.nlmsghdr);
@@ -170,7 +173,39 @@ pub const NetlinkSocket = struct {
         };
     }
 
-    fn enable_link() void {}
+    /// assign the provided links name the provided addr
+    pub fn assign_link_ip(nl_sock: NetlinkSocket, link: LinkInfo, addr: *AddrInfo) !void {
+        if (link.index) |idx| {
+            addr.if_index = idx;
+        } else {
+            std.log.err("you must provide an index via your link info", .{});
+            return error.NoIndex;
+        }
+        try nl_sock.add_addr(addr.*);
+    }
+
+    pub fn enable_link(nl_sock: NetlinkSocket, idx: u32) !void {
+        var buf: [8192 * 2]u8 align(@alignOf(c.nlmsghdr)) = undefined;
+        var offset: usize = 0;
+
+        const nlh = c.nlmsghdr{
+            .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_SETLINK)),
+            .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_ACK,
+            .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.ifinfomsg),
+            .nlmsg_seq = @intCast(std.time.timestamp()),
+            .nlmsg_pid = 0,
+        };
+        const ifimsg = c.ifinfomsg{ .ifi_index = @intCast(idx), .ifi_change = c.IFF_UP, .ifi_flags = c.IFF_UP };
+
+        @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+        offset += @sizeOf(c.nlmsghdr);
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.ifinfomsg)], std.mem.asBytes(&ifimsg));
+        offset += @sizeOf(c.ifinfomsg);
+
+        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+        try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
+    }
     fn disable_link() void {}
 
     pub fn dump_links(nl_sock: NetlinkSocket, out: []LinkInfo) !usize {
@@ -223,6 +258,8 @@ pub const NetlinkSocket = struct {
                     // the other parse functions return the relevant struct
                     // this one takes a pointer, modifies it, then returns void
                     const link = parse_link_attrs(attr_buf);
+
+                    link.index = ifimsg.ifi_index;
 
                     out[count] = link;
                     count += 1;
@@ -436,6 +473,8 @@ pub const NetlinkSocket = struct {
 
         add_rtattr(&buf, &offset, c.IFA_LOCAL, &addr.address);
         add_rtattr(&buf, &offset, c.IFA_ADDRESS, &addr.address);
+
+        // TODO: there is c.IFA_BROADCAST, do we need to add that as an attr?
 
         nlh.nlmsg_len = @intCast(offset);
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
