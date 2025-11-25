@@ -21,14 +21,13 @@ const NlMsgErr = extern struct {
 };
 
 pub const LinkInfo = struct {
-    name: []const u8,
-    mtu: ?u32 = null,
-    address: ?[]const u8 = null,
-    broadcast: ?[]const u8 = null,
-    parent_index: ?u32 = null, // IFLA_LINK
-    qdisc: ?[]const u8 = null,
-    kind: ?[]const u8 = null, // via IFLA_LINKINFO → IFLA_INFO_KIND
-    tx_qlen: ?u32 = null,
+    address: ?[]const u8 = null, // c.IFLA_ADDRESS
+    broadcast: ?[]const u8 = null, // c.IFLA_BROADCAST
+    ifname: []const u8, // c.IFLA_IFNAME
+    mtu: ?u32 = null, // c.IFLA_MTU
+    link: ?u32 = null, // c.IFLA_LINK
+    kind: ?[]const u8 = null, // c.IFLA_LINKINFO → c.IFLA_INFO_KIND
+    info_data: ?[]u8 = null, // c.IFLA_LINKINFO -> c.IFLA_INFO_DATA
 };
 
 pub const AddrInfo = struct {
@@ -91,7 +90,7 @@ pub const NetlinkSocket = struct {
             .nlmsg_seq = @intCast(std.time.timestamp()),
         };
 
-        const ifimsg = c.ifinfomsg{};
+        const ifimsg = c.ifinfomsg{ .ifi_change = 0xFFFFFFFF };
 
         @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
         offset += @sizeOf(c.nlmsghdr);
@@ -99,17 +98,21 @@ pub const NetlinkSocket = struct {
         @memcpy(buf[offset .. offset + @sizeOf(c.ifinfomsg)], std.mem.asBytes(&ifimsg));
         offset += @sizeOf(c.ifinfomsg);
 
-        add_rtattr(&buf, &offset, c.IFLA_IFNAME, info.name); // interface name
+        if (info.addresddresss) |addr| {
+            add_rtattr(&buf, &offset, c.IFLA_ADDRESS, addr);
+        }
+
+        if (info.broadcast) |broadcast| {
+            add_rtattr(&buf, &offset, c.IFLA_BROADCAST, broadcast);
+        }
+
+        add_rtattr(&buf, &offset, c.IFLA_IFNAME, info.ifname);
 
         if (info.mtu) |mtu| {
             add_rtattr(&buf, &offset, c.IFLA_MTU, std.mem.asBytes(&mtu));
         }
 
-        if (info.address) |addr| {
-            add_rtattr(&buf, &offset, c.IFLA_ADDRESS, addr);
-        }
-
-        if (info.parent_index) |parent| {
+        if (info.link) |parent| {
             add_rtattr(&buf, &offset, c.IFLA_LINK, std.mem.asBytes(&parent));
         }
 
@@ -588,6 +591,8 @@ fn parse_link_attrs(buf: []u8) LinkInfo {
         const data = buf[off + @sizeOf(c.rtattr) .. off + @sizeOf(c.rtattr) + data_len];
 
         switch (rta.rta_type) {
+            c.IFLA_ADDRESS => link.address = data,
+            c.IFLA_BROADCAST => link.broadcast = data,
             c.IFLA_IFNAME => link.name = data,
             c.IFLA_MTU => {
                 if (data.len == 4) {
@@ -595,8 +600,6 @@ fn parse_link_attrs(buf: []u8) LinkInfo {
                     link.mtu = std.mem.readInt(u32, arr, .little);
                 }
             },
-            c.IFLA_ADDRESS => link.address = data,
-            c.IFLA_BROADCAST => link.broadcast = data,
             c.IFLA_LINK => {
                 if (data.len == 4) {
                     const arr: *const [4]u8 = @ptrCast(data.ptr);
@@ -624,14 +627,8 @@ fn parse_linkinfo(buf: []u8, link: *LinkInfo) void {
         const data = buf[off + @sizeOf(c.rtattr) .. off + @sizeOf(c.rtattr) + data_len];
 
         switch (rta.rta_type) {
-            c.IFLA_INFO_KIND => {
-                link.kind = data;
-            },
-
-            c.IFLA_INFO_DATA => {
-                //TODO: i think stuff like wireguard keys go here?
-            },
-
+            c.IFLA_INFO_KIND => link.kind = data,
+            c.IFLA_INFO_DATA => link.info_data = data,
             else => {},
         }
 
