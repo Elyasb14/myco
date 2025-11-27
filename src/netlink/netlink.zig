@@ -30,7 +30,6 @@ pub const LinkInfo = struct {
     link: ?u32 = null, // c.IFLA_LINK
     kind: ?[]const u8 = null, // c.IFLA_LINKINFO → c.IFLA_INFO_KIND
     info_data: ?[]u8 = null, // c.IFLA_LINKINFO -> c.IFLA_INFO_DATA
-    index: ?u32 = null, // this goes in c.ifinfomsg not a c.IFLA_x attr
 };
 
 pub const AddrInfo = struct {
@@ -48,6 +47,12 @@ pub const RouteInfo = struct {
     prefsrc: ?[4]u8 = null,
     metric: ?u32 = null,
 };
+
+/// takes interface name and returns index
+pub fn c_nametoifindex(name: []const u8) u32 {
+    const idx = c.if_nametoindex(@ptrCast(name));
+    return idx;
+}
 
 pub const NetlinkSocket = struct {
     nl_sock: i32,
@@ -92,8 +97,6 @@ pub const NetlinkSocket = struct {
         };
 
         var ifimsg = c.ifinfomsg{ .ifi_change = 0xFFFFFFFF };
-
-        if (info.index) |idx| ifimsg.ifi_index = @intCast(idx);
 
         @memcpy(buf[offset .. offset + @sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
         offset += @sizeOf(c.nlmsghdr);
@@ -177,18 +180,13 @@ pub const NetlinkSocket = struct {
 
     /// assign the provided links name the provided addr
     pub fn assign_link_ip(nl_sock: NetlinkSocket, link: LinkInfo, addr: *AddrInfo) !void {
-        if (link.index) |idx| {
-            addr.if_index = idx;
-        } else {
-            std.log.err("you must provide an index via your link info", .{});
-            return error.NoIndex;
-        }
+        addr.if_index = c_nametoifindex(link.ifname);
         try nl_sock.add_addr(addr.*);
     }
 
     /// TODO: should this return a LinkInfo struct?
     /// should we pass a LinkInfo struct?
-    pub fn enable_link(nl_sock: NetlinkSocket, idx: u32) !void {
+    pub fn enable_link(nl_sock: NetlinkSocket, link: LinkInfo) !void {
         var buf: [8192 * 2]u8 align(@alignOf(c.nlmsghdr)) = undefined;
         var offset: usize = 0;
 
@@ -201,7 +199,7 @@ pub const NetlinkSocket = struct {
         };
 
         // change c.IFF_UP to 1
-        const ifimsg = c.ifinfomsg{ .ifi_index = @intCast(idx), .ifi_change = c.IFF_UP, .ifi_flags = 1 };
+        const ifimsg = c.ifinfomsg{ .ifi_index = @intCast(c_nametoifindex(link.ifname)), .ifi_change = c.IFF_UP, .ifi_flags = 1 };
 
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
         offset += @sizeOf(c.nlmsghdr);
@@ -214,7 +212,7 @@ pub const NetlinkSocket = struct {
     }
 
     /// TODO: should we take in a LinkInfo struct or just the u32 index?
-    pub fn disable_link(nl_sock: NetlinkSocket, idx: u32) !void {
+    pub fn disable_link(nl_sock: NetlinkSocket, link: LinkInfo) !void {
         var buf: [8192 * 2]u8 align(@alignOf(c.nlmsghdr)) = undefined;
         var offset: usize = 0;
 
@@ -227,7 +225,7 @@ pub const NetlinkSocket = struct {
         };
 
         // change the c.IFF_UP flag to 0
-        const ifimsg = c.ifinfomsg{ .ifi_index = @intCast(idx), .ifi_change = c.IFF_UP, .ifi_flags = 0 };
+        const ifimsg = c.ifinfomsg{ .ifi_index = @intCast(c_nametoifindex(link.ifname)), .ifi_change = c.IFF_UP, .ifi_flags = 0 };
 
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
         offset += @sizeOf(c.nlmsghdr);
@@ -289,8 +287,6 @@ pub const NetlinkSocket = struct {
                     // the other parse functions return the relevant struct
                     // this one takes a pointer, modifies it, then returns void
                     const link = parse_link_attrs(attr_buf);
-
-                    link.index = ifimsg.ifi_index;
 
                     out[count] = link;
                     count += 1;
