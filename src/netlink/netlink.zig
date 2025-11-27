@@ -20,6 +20,8 @@ const NlMsgErr = extern struct {
     msg: c.nlmsghdr,
 };
 
+/// TODO: should we just calculate the index from the name?
+/// there are libc functions for that, cuz we kinda store index twice with ifname and index
 pub const LinkInfo = struct {
     address: ?[]const u8 = null, // c.IFLA_ADDRESS
     broadcast: ?[]const u8 = null, // c.IFLA_BROADCAST
@@ -28,7 +30,7 @@ pub const LinkInfo = struct {
     link: ?u32 = null, // c.IFLA_LINK
     kind: ?[]const u8 = null, // c.IFLA_LINKINFO → c.IFLA_INFO_KIND
     info_data: ?[]u8 = null, // c.IFLA_LINKINFO -> c.IFLA_INFO_DATA
-    index: ?u32 = null,
+    index: ?u32 = null, // this goes in c.ifinfomsg not a c.IFLA_x attr
 };
 
 pub const AddrInfo = struct {
@@ -184,6 +186,8 @@ pub const NetlinkSocket = struct {
         try nl_sock.add_addr(addr.*);
     }
 
+    /// TODO: should this return a LinkInfo struct?
+    /// should we pass a LinkInfo struct?
     pub fn enable_link(nl_sock: NetlinkSocket, idx: u32) !void {
         var buf: [8192 * 2]u8 align(@alignOf(c.nlmsghdr)) = undefined;
         var offset: usize = 0;
@@ -195,7 +199,9 @@ pub const NetlinkSocket = struct {
             .nlmsg_seq = @intCast(std.time.timestamp()),
             .nlmsg_pid = 0,
         };
-        const ifimsg = c.ifinfomsg{ .ifi_index = @intCast(idx), .ifi_change = c.IFF_UP, .ifi_flags = c.IFF_UP };
+
+        // change c.IFF_UP to 1
+        const ifimsg = c.ifinfomsg{ .ifi_index = @intCast(idx), .ifi_change = c.IFF_UP, .ifi_flags = 1 };
 
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
         offset += @sizeOf(c.nlmsghdr);
@@ -206,7 +212,32 @@ pub const NetlinkSocket = struct {
         try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
         try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
     }
-    fn disable_link() void {}
+
+    /// TODO: should we take in a LinkInfo struct or just the u32 index?
+    pub fn disable_link(nl_sock: NetlinkSocket, idx: u32) !void {
+        var buf: [8192 * 2]u8 align(@alignOf(c.nlmsghdr)) = undefined;
+        var offset: usize = 0;
+
+        const nlh = c.nlmsghdr{
+            .nlmsg_type = @intCast(@intFromEnum(linux.NetlinkMessageType.RTM_SETLINK)),
+            .nlmsg_flags = c.NLM_F_REQUEST | c.NLM_F_ACK,
+            .nlmsg_len = @sizeOf(c.nlmsghdr) + @sizeOf(c.ifinfomsg),
+            .nlmsg_seq = @intCast(std.time.timestamp()),
+            .nlmsg_pid = 0,
+        };
+
+        // change the c.IFF_UP flag to 0
+        const ifimsg = c.ifinfomsg{ .ifi_index = @intCast(idx), .ifi_change = c.IFF_UP, .ifi_flags = 0 };
+
+        @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
+        offset += @sizeOf(c.nlmsghdr);
+
+        @memcpy(buf[offset .. offset + @sizeOf(c.ifinfomsg)], std.mem.asBytes(&ifimsg));
+        offset += @sizeOf(c.ifinfomsg);
+
+        try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], @ptrCast(&nl_sock.kern_addr));
+        try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
+    }
 
     pub fn dump_links(nl_sock: NetlinkSocket, out: []LinkInfo) !usize {
         var buf: [8192 * 2]u8 align(@alignOf(c.nlmsghdr)) = undefined;

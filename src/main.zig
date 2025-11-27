@@ -13,4 +13,6 @@ pub fn main() !void {
 
     try nl_sock.enable_link(info.index.?);
     try nl_sock.assign_link_ip(info, &addr);
+
+    try nl_sock.disable_link(info.index.?);
 }
