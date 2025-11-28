@@ -54,6 +54,7 @@ pub fn c_nametoifindex(name: []const u8) u32 {
     return idx;
 }
 
+/// a wrapper around netlink functions
 pub const NetlinkSocket = struct {
     nl_sock: i32,
     kern_addr: linux.sockaddr.nl,
@@ -179,6 +180,8 @@ pub const NetlinkSocket = struct {
     }
 
     /// assign the provided links name the provided addr
+    /// TODO: i really don't like how this works
+    /// why do i need to pass a mutable pointer (*AddrInfo)?
     pub fn assign_link_ip(nl_sock: NetlinkSocket, link: LinkInfo, addr: *AddrInfo) !void {
         addr.if_index = c_nametoifindex(link.ifname);
         try nl_sock.add_addr(addr.*);

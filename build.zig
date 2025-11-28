@@ -17,7 +17,15 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/netlink/netlink.zig"),
     });
 
+    const dsl_mod = b.addModule("config", .{
+        .root_source_file = b.path("src/dsl.zig"),
+    });
+
+    dsl_mod.addImport("nl", netlink_mod);
+
     myco_exe.root_module.addImport("netlink", netlink_mod);
+    myco_exe.root_module.addImport("dsl", dsl_mod);
     myco_exe.linkLibC();
+
     b.installArtifact(myco_exe);
 }
