@@ -1,3 +1,11 @@
-set interface eth0 address 192.168.1.1/24
-set interface eth0 up true
-set firewall input default drop
+interface wg0 {
+    address 192.168.1.1/24
+    up true
+}
+
+# comment
+
+interface wg1 {
+    address 192.168.2.1/24
+    up false
+}

@@ -1,7 +1,11 @@
 const std = @import("std");
 const nl = @import("netlink");
-const dsl = @import("dsl");
+const config = @import("config");
 
 pub fn main() !void {
-    try dsl.read_script("src/config.myco");
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    try config.read_script(allocator, "src/config.myco");
 }
