@@ -83,14 +83,12 @@ pub const Lexer = struct {
 
         const c = self.peek().?;
 
-        // Comments
         if (c == '#') {
             self.advance();
             self.skip_comment();
             return self.next();
         }
 
-        // Single-character tokens
         switch (c) {
             '{' => {
                 self.advance();
@@ -113,8 +111,7 @@ pub const Lexer = struct {
         }
 
         if (std.ascii.isAlphabetic(c) or c == '_' or c == '-') {
-            const ident = try self.read_ident();
-            return Token{ .Ident = ident };
+            return Token{ .Ident = try self.read_ident() };
         }
 
         if (c >= '0' and c <= '9') {
@@ -126,22 +123,56 @@ pub const Lexer = struct {
     }
 };
 
-pub fn read_script(allocator: Allocator, file_path: []const u8) !void {
-    var buf: [8192]u8 = undefined;
-    const file_contents = try std.fs.cwd().readFile(file_path, &buf);
+pub const Value = union(enum) {
+    String: []const u8,
+    Number: i64,
+    Ident: []const u8,
+};
 
-    var lexer = Lexer.init(file_contents, allocator);
+pub const Pair = struct {
+    key: []const u8,
+    value: Value,
+};
 
-    while (true) {
-        const tok = try lexer.next();
-        if (tok == Token.Ident) {
-            std.debug.print("TOKEN: {s}\n", .{tok.Ident});
-        } else {
-            std.debug.print("TOKEN: {any}\n", .{tok});
+pub const BlockType = enum(u8) { LINK };
+
+/// e.g.
+/// # type and name
+/// link wg0 {
+///    # pairs
+///    address 192.168.1.1/24
+///    up true
+/// }
+pub const Block = struct {
+    type: BlockType,
+    name: []const u8,
+
+    pairs: []Pair,
+};
+
+pub const Config = struct {
+    blocks: []Block,
+
+    pub fn init(allocator: Allocator, file_path: []const u8) !void {
+        var buf: [8192]u8 = undefined;
+        const file_contents = try std.fs.cwd().readFile(file_path, &buf);
+
+        var lexer = Lexer.init(file_contents, allocator);
+
+        var tokens = try std.ArrayList(Token).initCapacity(allocator, 1024);
+
+        while (true) {
+            const tok = try lexer.next();
+            try tokens.append(allocator, tok);
+            if (@intFromEnum(tok) == @intFromEnum(Token.Eof))
+                break;
         }
 
-        if (@intFromEnum(tok) == @intFromEnum(Token.Eof))
-            break;
+        for (tokens.items, 0..) |token, i| {
+            if (token == .Ident) {
+                std.debug.print("IDENT: {s}\n", .{token.Ident});
+            }
+        }
     }
-}
+};
 
