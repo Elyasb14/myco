@@ -19,11 +19,23 @@ pub const Lexer = struct {
 
     allocator: Allocator,
 
-    pub fn init(input: []const u8, allocator: Allocator) Lexer {
+    pub fn init(allocator: Allocator, input: []const u8) Lexer {
         return .{
             .input = input,
             .allocator = allocator,
         };
+    }
+
+    pub fn tokenize(self: Lexer) []Token {
+        var tokens = try std.ArrayList(Token).initCapacity(self.allocator, 1024);
+
+        while (true) {
+            const tok = try self.next();
+            try tokens.append(self.allocator, tok);
+            if (@intFromEnum(tok) == @intFromEnum(Token.Eof))
+                break;
+        }
+        return tokens;
     }
 
     fn peek(self: *Lexer) ?u8 {
@@ -152,27 +164,9 @@ pub const Block = struct {
 
 pub const Config = struct {
     blocks: []Block,
+    index: usize,
 
-    pub fn init(allocator: Allocator, file_path: []const u8) !void {
-        var buf: [8192]u8 = undefined;
-        const file_contents = try std.fs.cwd().readFile(file_path, &buf);
-
-        var lexer = Lexer.init(file_contents, allocator);
-
-        var tokens = try std.ArrayList(Token).initCapacity(allocator, 1024);
-
-        while (true) {
-            const tok = try lexer.next();
-            try tokens.append(allocator, tok);
-            if (@intFromEnum(tok) == @intFromEnum(Token.Eof))
-                break;
-        }
-
-        for (tokens.items, 0..) |token, i| {
-            if (token == .Ident) {
-                std.debug.print("IDENT: {s}\n", .{token.Ident});
-            }
-        }
+    pub fn parse(allocator: Allocator, tokens: []Token) !void {
+        var blocks = try std.ArrayList(Block).initCapacity(allocator, 1024);
     }
 };
-
