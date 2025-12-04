@@ -184,14 +184,40 @@ fn parse_block_name(token: Token) ![]const u8 {
     }
 }
 
-fn parse_pairs(tokens: []Token) []Pair {
-
+fn parse_pairs(allocator: Allocator, tokens: []Token) ![]Pair {
+    var pairs = try std.ArrayList(Pair).initCapacity(allocator, 1024);
     for (tokens, 0..) |token, i| {
-        if 
+        if (token != Token.Ident) {
+            if (token == Token.RBrace) {
+                return try pairs.toOwnedSlice(allocator);
+            }
+            return error.TypeNEIdent;
+        }
+
+        switch (tokens[i + 1]) {
+            Token.Number => {
+                const p = Pair{ .key = token.Ident, .value = Value{ .Number = tokens[i + 1].Number } };
+                try pairs.append(allocator, p);
+            },
+            Token.Ident => {
+                const p = Pair{ .key = token.Ident, .value = Value{ .Ident = tokens[i + 1].Ident } };
+                try pairs.append(allocator, p);
+            },
+
+            Token.String => {
+                const p = Pair{ .key = token.Ident, .value = Value{ .String = tokens[i + 1].String } };
+                try pairs.append(allocator, p);
+            },
+            else => {
+                return error.ExpectedIdentStringNumber;
+            },
+        }
     }
+
+    return pairs.toOwnedSlice(allocator);
 }
 
-fn parse_block(tokens: []Token) !void {
+fn parse_block(allocator: Allocator, tokens: []Token) !void {
     var block = Block{ .type = .LINK, .name = "" };
     const blk_type = try parse_block_type(tokens[0]);
     const blk_name = try parse_block_name(tokens[1]);
@@ -200,16 +226,18 @@ fn parse_block(tokens: []Token) !void {
         return error.ExpectedLBrace;
     }
 
-    parse_pairs(tokens[3..]);
+    const pairs = try parse_pairs(allocator, tokens[3..]);
 
     block.name = blk_name;
     block.type = blk_type;
+    block.pairs = pairs;
     std.debug.print("BLOCK: {any}\n", .{block});
 }
 
 pub fn parse_config_tokens(allocator: Allocator, tokens: []Token) ![]Block {
     var blocks = try std.ArrayList(Block).initCapacity(allocator, 1024);
 
-    try parse_block(tokens);
+    try parse_block(allocator, tokens);
     return blocks.toOwnedSlice(allocator);
 }
+
