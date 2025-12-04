@@ -162,28 +162,54 @@ pub const Block = struct {
 };
 
 fn parse_block_type(token: Token) !BlockType {
-    if (token != Token.Ident)
+    if (token != Token.Ident) {
         return error.TypeNEIdent;
-
-    if (std.mem.eql(u8, token.Ident, "link")) {
-        return BlockType.LINK;
-    } else if (std.mem.eql(u8, token.Ident, "fw_rule")) {
-        return BlockType.FW_RULE;
     } else {
-        return error.UnsupportedBlockType;
+        if (std.mem.eql(u8, token.Ident, "link")) {
+            return BlockType.LINK;
+        } else if (std.mem.eql(u8, token.Ident, "fw_rule")) {
+            return BlockType.FW_RULE;
+        } else {
+            std.log.err("invalid block type: {s}\n", .{token.Ident});
+            return error.UnsupportedBlockType;
+        }
     }
 }
 
-fn parse_block(tokens: []Token) void {
-    var block = Block{ .type = .LINK, .name = "" };
-    for (tokens) |token| {
-        const blk_type = parse_block_type(token);
-        block.type = blk_type;
+fn parse_block_name(token: Token) ![]const u8 {
+    if (token != Token.Ident) {
+        return error.TypeNEIdent;
+    } else {
+        return token.Ident;
     }
+}
+
+fn parse_pairs(tokens: []Token) []Pair {
+
+    for (tokens, 0..) |token, i| {
+        if 
+    }
+}
+
+fn parse_block(tokens: []Token) !void {
+    var block = Block{ .type = .LINK, .name = "" };
+    const blk_type = try parse_block_type(tokens[0]);
+    const blk_name = try parse_block_name(tokens[1]);
+
+    if (tokens[2] != Token.LBrace) {
+        return error.ExpectedLBrace;
+    }
+
+    parse_pairs(tokens[3..]);
+
+    block.name = blk_name;
+    block.type = blk_type;
+    std.debug.print("BLOCK: {any}\n", .{block});
 }
 
 pub fn parse_config_tokens(allocator: Allocator, tokens: []Token) ![]Block {
     var blocks = try std.ArrayList(Block).initCapacity(allocator, 1024);
 
-    const block = parse_block(tokens);
+    try parse_block(tokens);
+    return blocks.toOwnedSlice(allocator);
 }

@@ -13,6 +13,6 @@ pub fn main() !void {
     var lexer = conf.Lexer.init(allocator, contents);
     const tokens = try lexer.tokenize();
 
-    const block = try conf.parse_block(tokens);
-    std.debug.print("BLOCK: {any}\n", .{block});
+    const blocks = try conf.parse_config_tokens(allocator, tokens);
+    _ = blocks;
 }
