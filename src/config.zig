@@ -16,7 +16,6 @@ pub const Token = union(enum) {
 pub const Lexer = struct {
     input: []const u8,
     index: usize = 0,
-
     allocator: Allocator,
 
     pub fn init(allocator: Allocator, input: []const u8) Lexer {
@@ -26,7 +25,7 @@ pub const Lexer = struct {
         };
     }
 
-    pub fn tokenize(self: Lexer) []Token {
+    pub fn tokenize(self: *Lexer) ![]Token {
         var tokens = try std.ArrayList(Token).initCapacity(self.allocator, 1024);
 
         while (true) {
@@ -35,7 +34,7 @@ pub const Lexer = struct {
             if (@intFromEnum(tok) == @intFromEnum(Token.Eof))
                 break;
         }
-        return tokens;
+        return try tokens.toOwnedSlice(self.allocator);
     }
 
     fn peek(self: *Lexer) ?u8 {
@@ -146,7 +145,7 @@ pub const Pair = struct {
     value: Value,
 };
 
-pub const BlockType = enum(u8) { LINK };
+pub const BlockType = enum(u8) { LINK, FW_RULE };
 
 /// e.g.
 /// # type and name
@@ -159,14 +158,32 @@ pub const Block = struct {
     type: BlockType,
     name: []const u8,
 
-    pairs: []Pair,
+    pairs: ?[]Pair = null,
 };
 
-pub const Config = struct {
-    blocks: []Block,
-    index: usize,
+fn parse_block_type(token: Token) !BlockType {
+    if (token != Token.Ident)
+        return error.TypeNEIdent;
 
-    pub fn parse(allocator: Allocator, tokens: []Token) !void {
-        var blocks = try std.ArrayList(Block).initCapacity(allocator, 1024);
+    if (std.mem.eql(u8, token.Ident, "link")) {
+        return BlockType.LINK;
+    } else if (std.mem.eql(u8, token.Ident, "fw_rule")) {
+        return BlockType.FW_RULE;
+    } else {
+        return error.UnsupportedBlockType;
     }
-};
+}
+
+fn parse_block(tokens: []Token) void {
+    var block = Block{ .type = .LINK, .name = "" };
+    for (tokens) |token| {
+        const blk_type = parse_block_type(token);
+        block.type = blk_type;
+    }
+}
+
+pub fn parse_config_tokens(allocator: Allocator, tokens: []Token) ![]Block {
+    var blocks = try std.ArrayList(Block).initCapacity(allocator, 1024);
+
+    const block = parse_block(tokens);
+}

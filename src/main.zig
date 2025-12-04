@@ -7,10 +7,12 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    // const tokens = try conf.Config.tokenize(allocator, "src/config.myco");
-    var buf: []u8 = undefined;
+    var buf: [8192]u8 = undefined;
     const contents = try std.fs.cwd().readFile("src/config.myco", &buf);
 
-    const tokens = conf.Lexer.init(allocator, contents).tokenize();
-    try conf.Config.parse(allocator, tokens);
+    var lexer = conf.Lexer.init(allocator, contents);
+    const tokens = try lexer.tokenize();
+
+    const block = try conf.parse_block(tokens);
+    std.debug.print("BLOCK: {any}\n", .{block});
 }
