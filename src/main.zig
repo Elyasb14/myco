@@ -12,8 +12,9 @@ pub fn main() !void {
 
     var lexer = conf.Lexer.init(allocator, contents);
     const tokens = try lexer.tokenize();
-    for (tokens) |token| std.debug.print("TOKEN: {any}\n", .{token});
 
     const blocks = try conf.parse_config_tokens(allocator, tokens);
-    _ = blocks;
+    for (blocks) |block| {
+        std.debug.print("PAIRS: {any}\n", .{block.pairs});
+    }
 }

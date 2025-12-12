@@ -1,6 +1,4 @@
-
 link wg0 {
     address 1 
     up true
 }
-

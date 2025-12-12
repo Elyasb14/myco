@@ -185,39 +185,36 @@ fn parse_block_name(token: Token) ![]const u8 {
 }
 
 fn parse_pairs(allocator: Allocator, tokens: []Token) ![]Pair {
-    var pairs = try std.ArrayList(Pair).initCapacity(allocator, 1024);
-    for (tokens, 0..) |token, i| {
-        if (token != Token.Ident) {
-            if (token == Token.RBrace) {
-                return try pairs.toOwnedSlice(allocator);
-            }
-            return error.TypeNEIdent;
-        }
+    var pairs = try std.ArrayList(Pair).initCapacity(allocator, 16);
 
-        switch (tokens[i + 1]) {
-            Token.Number => {
-                const p = Pair{ .key = token.Ident, .value = Value{ .Number = tokens[i + 1].Number } };
-                try pairs.append(allocator, p);
-            },
-            Token.Ident => {
-                const p = Pair{ .key = token.Ident, .value = Value{ .Ident = tokens[i + 1].Ident } };
-                try pairs.append(allocator, p);
-            },
+    var i: usize = 0;
+    while (i < tokens.len) {
+        const key_tok = tokens[i];
 
-            Token.String => {
-                const p = Pair{ .key = token.Ident, .value = Value{ .String = tokens[i + 1].String } };
-                try pairs.append(allocator, p);
-            },
-            else => {
-                return error.ExpectedIdentStringNumber;
-            },
-        }
+        if (key_tok == Token.RBrace) break;
+        if (i + 1 >= tokens.len) return error.UnexpectedEnd;
+
+        const val_tok = tokens[i + 1];
+
+        if (key_tok != Token.Ident) return error.ExpectedIdent;
+
+        const value: Value = switch (val_tok) {
+            Token.Number => Value{ .Number = val_tok.Number },
+            Token.Ident => Value{ .Ident = val_tok.Ident },
+            Token.String => Value{ .String = val_tok.String },
+            else => return error.ExpectedIdentStringNumber,
+        };
+
+        const p = Pair{ .key = key_tok.Ident, .value = value };
+        try pairs.append(allocator, p);
+
+        i += 2;
     }
 
-    return pairs.toOwnedSlice(allocator);
+    return try pairs.toOwnedSlice(allocator);
 }
 
-fn parse_block(allocator: Allocator, tokens: []Token) !void {
+fn parse_block(allocator: Allocator, tokens: []Token) !Block {
     var block = Block{ .type = .LINK, .name = "" };
     const blk_type = try parse_block_type(tokens[0]);
     const blk_name = try parse_block_name(tokens[1]);
@@ -231,13 +228,13 @@ fn parse_block(allocator: Allocator, tokens: []Token) !void {
     block.name = blk_name;
     block.type = blk_type;
     block.pairs = pairs;
-    std.debug.print("BLOCK: {any}\n", .{block});
+    return block;
 }
 
 pub fn parse_config_tokens(allocator: Allocator, tokens: []Token) ![]Block {
     var blocks = try std.ArrayList(Block).initCapacity(allocator, 1024);
 
-    try parse_block(allocator, tokens);
+    const block = try parse_block(allocator, tokens);
+    try blocks.append(allocator, block);
     return blocks.toOwnedSlice(allocator);
 }
-
