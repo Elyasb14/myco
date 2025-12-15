@@ -138,6 +138,7 @@ pub const Value = union(enum) {
     String: []const u8,
     Number: i64,
     Ident: []const u8,
+    Addr: []Token,
 };
 
 pub const Pair = struct {
@@ -158,7 +159,7 @@ pub const Block = struct {
     type: BlockType,
     name: []const u8,
 
-    pairs: ?[]Pair = null,
+    pairs: []Pair,
 };
 
 fn parse_block_type(token: Token) !BlockType {
@@ -194,6 +195,14 @@ fn parse_pairs(allocator: Allocator, tokens: []Token) ![]Pair {
         if (key_tok == Token.RBrace) break;
         if (i + 1 >= tokens.len) return error.UnexpectedEnd;
 
+        if (tokens[i + 1] == Token.Number and tokens[i + 2] == Token.Dot) {
+            const p = Pair{ .key = key_tok.Ident, .value = Value{ .Addr = tokens[i + 1 .. i + 10] } };
+            try pairs.append(allocator, p);
+
+            i += 10;
+            continue;
+        }
+
         const val_tok = tokens[i + 1];
 
         if (key_tok != Token.Ident) return error.ExpectedIdent;
@@ -215,7 +224,7 @@ fn parse_pairs(allocator: Allocator, tokens: []Token) ![]Pair {
 }
 
 fn parse_block(allocator: Allocator, tokens: []Token) !Block {
-    var block = Block{ .type = .LINK, .name = "" };
+    var block = Block{ .type = .LINK, .name = "", .pairs = undefined };
     const blk_type = try parse_block_type(tokens[0]);
     const blk_name = try parse_block_name(tokens[1]);
 
