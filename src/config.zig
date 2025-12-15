@@ -192,11 +192,11 @@ fn parse_pairs(allocator: Allocator, tokens: []Token) ![]Pair {
     while (i < tokens.len) {
         const key_tok = tokens[i];
 
-        if (key_tok == Token.RBrace) break;
+        if (key_tok == .RBrace) break;
         if (i + 1 >= tokens.len) return error.UnexpectedEnd;
 
         // TODO: why do we do this
-        if (tokens[i + 1] == Token.Number and tokens[i + 2] == Token.Dot) {
+        if (tokens[i + 1] == .Number and tokens[i + 2] == .Dot) {
             const p = Pair{ .key = key_tok.Ident, .value = Value{ .Addr = tokens[i + 1 .. i + 10] } };
             try pairs.append(allocator, p);
 
@@ -206,12 +206,12 @@ fn parse_pairs(allocator: Allocator, tokens: []Token) ![]Pair {
 
         const val_tok = tokens[i + 1];
 
-        if (key_tok != Token.Ident) return error.ExpectedIdent;
+        if (key_tok != .Ident) return error.ExpectedIdent;
 
         const value: Value = switch (val_tok) {
-            Token.Number => Value{ .Number = val_tok.Number },
-            Token.Ident => Value{ .Ident = val_tok.Ident },
-            Token.String => Value{ .String = val_tok.String },
+            .Number => Value{ .Number = val_tok.Number },
+            .Ident => Value{ .Ident = val_tok.Ident },
+            .String => Value{ .String = val_tok.String },
             else => return error.ExpectedIdentStringNumber,
         };
 
@@ -229,7 +229,7 @@ fn parse_block(allocator: Allocator, tokens: []Token) !Block {
     const blk_type = try parse_block_type(tokens[0]);
     const blk_name = try parse_block_name(tokens[1]);
 
-    if (tokens[2] != Token.LBrace) {
+    if (tokens[2] != .LBrace) {
         return error.ExpectedLBrace;
     }
 
@@ -241,10 +241,14 @@ fn parse_block(allocator: Allocator, tokens: []Token) !Block {
     return block;
 }
 
+fn split_blocks(allocator: Allocator, tokens: []Token) [][]Token {
+    var buf = try std.ArrayList([]Block).initCapacity(allocator, 1024);
+}
+
 pub fn parse_config_tokens(allocator: Allocator, tokens: []Token) ![]Block {
-    var blocks = try std.ArrayList(Block).initCapacity(allocator, 1024);
+    var block_container = try std.ArrayList(Block).initCapacity(allocator, 1024);
 
     const block = try parse_block(allocator, tokens);
-    try blocks.append(allocator, block);
-    return blocks.toOwnedSlice(allocator);
+    try block_container.append(allocator, block);
+    return block_container.toOwnedSlice(allocator);
 }

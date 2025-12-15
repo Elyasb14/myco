@@ -2,3 +2,8 @@ link wg0 {
     address 192.168.2.0/24 
     up true
 }
+
+link wg1 {
+    address 192.168.2.1/24 
+    up true
+}
