@@ -195,6 +195,7 @@ fn parse_pairs(allocator: Allocator, tokens: []Token) ![]Pair {
         if (key_tok == Token.RBrace) break;
         if (i + 1 >= tokens.len) return error.UnexpectedEnd;
 
+        // TODO: why do we do this
         if (tokens[i + 1] == Token.Number and tokens[i + 2] == Token.Dot) {
             const p = Pair{ .key = key_tok.Ident, .value = Value{ .Addr = tokens[i + 1 .. i + 10] } };
             try pairs.append(allocator, p);
