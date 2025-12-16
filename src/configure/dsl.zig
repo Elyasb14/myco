@@ -302,15 +302,22 @@ pub fn apply_config(allocator: Allocator, path: []const u8) !void {
 
                             try nl_sock.add_link(info);
 
-                            const ifname_z = try allocator.dupeZ(u8, block.name);
-                            defer allocator.free(ifname_z);
+                            var links: [25]nl.LinkInfo = undefined;
 
-                            const ifindex = nl.c_nametoifindex(ifname_z);
+                            const n = try nl_sock.dump_links(&links);
+
+                            for (links[0..n]) |link| {
+                                std.debug.print("LINK NAME: {s}\n", .{link.ifname});
+                            }
+
+                            std.debug.print("INFO NAME LEN: {d}\n", .{info.ifname.len});
+
+                            const c_str: [*c]const u8 = @ptrCast(info.ifname);
+                            const ifindex = nl.c_nametoifindex(c_str);
                             if (ifindex == 0) return error.InterfaceNotFound;
 
-                            // 3. Assign address (by index)
                             var addr = nl.AddrInfo{
-                                .if_index = 10,
+                                .if_index = ifindex,
                                 .prefix_len = pair.value.Addr[8].Number,
                                 .address = .{
                                     pair.value.Addr[0].Number,

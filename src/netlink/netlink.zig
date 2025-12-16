@@ -49,9 +49,8 @@ pub const RouteInfo = struct {
 };
 
 /// takes interface name and returns index
-pub fn c_nametoifindex(name: []const u8) u32 {
-    const idx = c.if_nametoindex(@ptrCast(name));
-    return idx;
+pub fn c_nametoifindex(name: [*c]const u8) u32 {
+    return c.if_nametoindex(name);
 }
 
 /// a wrapper around netlink functions
