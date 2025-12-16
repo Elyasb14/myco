@@ -17,11 +17,11 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/netlink/netlink.zig"),
     });
 
-    const config_mod = b.addModule("config", .{
-        .root_source_file = b.path("src/config.zig"),
+    const config_mod = b.addModule("configure", .{
+        .root_source_file = b.path("src/configure/dsl.zig"),
     });
 
-    config_mod.addImport("nl", netlink_mod);
+    config_mod.addImport("netlink", netlink_mod);
 
     myco_exe.root_module.addImport("netlink", netlink_mod);
     myco_exe.root_module.addImport("config", config_mod);

@@ -1,10 +1,12 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const nl = @import("netlink");
+const linux = std.os.linux;
 
-pub const Token = union(enum) {
+const Token = union(enum) {
     Ident: []const u8,
     String: []const u8,
-    Number: i64,
+    Number: u8,
 
     Dot,
     Slash,
@@ -73,7 +75,7 @@ pub const Lexer = struct {
         return self.input[start..self.index];
     }
 
-    fn read_number(self: *Lexer) !i64 {
+    fn read_number(self: *Lexer) !u8 {
         const start = self.index;
 
         while (self.peek()) |c| {
@@ -83,7 +85,7 @@ pub const Lexer = struct {
         }
 
         const slice = self.input[start..self.index];
-        return try std.fmt.parseInt(i64, slice, 10);
+        return try std.fmt.parseInt(u8, slice, 10);
     }
 
     pub fn next(self: *Lexer) !Token {
@@ -244,24 +246,20 @@ fn parse_block(allocator: Allocator, tokens: []Token) !Block {
 fn split_blocks(allocator: Allocator, tokens: []Token) ![][]Token {
     var buf = try std.ArrayList([]Token).initCapacity(allocator, 1024);
 
-    var i: usize = 0;
     var start: usize = 0;
 
-    for (tokens) |token| {
+    for (tokens, 0..) |token, i| {
         switch (token) {
             .LBrace => {
-                i += 1;
                 continue;
             },
             .RBrace => {
                 try buf.append(allocator, tokens[start .. i + 1]);
 
                 start = i + 1;
-                i += 1;
                 continue;
             },
             else => {
-                i += 1;
                 continue;
             },
         }
@@ -269,7 +267,7 @@ fn split_blocks(allocator: Allocator, tokens: []Token) ![][]Token {
     return buf.toOwnedSlice(allocator);
 }
 
-pub fn parse_config_tokens(allocator: Allocator, tokens: []Token) ![]Block {
+fn parse_config_tokens(allocator: Allocator, tokens: []Token) ![]Block {
     var block_container = try std.ArrayList(Block).initCapacity(allocator, 1024);
 
     const splitted = try split_blocks(allocator, tokens);
@@ -279,4 +277,58 @@ pub fn parse_config_tokens(allocator: Allocator, tokens: []Token) ![]Block {
         try block_container.append(allocator, block);
     }
     return block_container.toOwnedSlice(allocator);
+}
+
+pub fn apply_config(allocator: Allocator, path: []const u8) !void {
+    var buf: [8192]u8 = undefined;
+    const contents = try std.fs.cwd().readFile(path, &buf);
+
+    var lexer = Lexer.init(allocator, contents);
+    const tokens = try lexer.tokenize();
+
+    const blocks = try parse_config_tokens(allocator, tokens);
+    for (blocks) |block| {
+        switch (block.type) {
+            .LINK => {
+                for (block.pairs) |pair| {
+                    switch (pair.value) {
+                        .Addr => {
+                            const nl_sock = try nl.NetlinkSocket.open(linux.NETLINK.ROUTE);
+                            defer nl_sock.close();
+
+                            // TODO: add kind to block?
+                            // how do we get the .kind
+                            const info = nl.LinkInfo{ .ifname = block.name, .kind = "wireguard", .mtu = 12 };
+
+                            try nl_sock.add_link(info);
+
+                            const ifname_z = try allocator.dupeZ(u8, block.name);
+                            defer allocator.free(ifname_z);
+
+                            const ifindex = nl.c_nametoifindex(ifname_z);
+                            if (ifindex == 0) return error.InterfaceNotFound;
+
+                            // 3. Assign address (by index)
+                            var addr = nl.AddrInfo{
+                                .if_index = 10,
+                                .prefix_len = pair.value.Addr[8].Number,
+                                .address = .{
+                                    pair.value.Addr[0].Number,
+                                    pair.value.Addr[2].Number,
+                                    pair.value.Addr[4].Number,
+                                    pair.value.Addr[6].Number,
+                                },
+                            };
+                            try nl_sock.assign_link_ip(info, &addr);
+
+                            // 4. Bring link UP (by index)
+                            try nl_sock.enable_link(info);
+                        },
+                        else => {},
+                    }
+                }
+            },
+            else => {},
+        }
+    }
 }

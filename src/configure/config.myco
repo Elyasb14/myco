@@ -1,0 +1,5 @@
+link wg27 {
+    address 10.0.2.3/24 
+    up true
+}
+

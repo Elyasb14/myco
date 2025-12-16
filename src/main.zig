@@ -7,19 +7,5 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    var buf: [8192]u8 = undefined;
-    const contents = try std.fs.cwd().readFile("src/config.myco", &buf);
-
-    var lexer = conf.Lexer.init(allocator, contents);
-    const tokens = try lexer.tokenize();
-
-    const blocks = try conf.parse_config_tokens(allocator, tokens);
-    for (blocks) |block| {
-        for (block.pairs) |pair| {
-            switch (pair.value) {
-                .Addr => std.debug.print("ADDR: {any}\n", .{pair.value}),
-                else => {},
-            }
-        }
-    }
+    try conf.apply_config(allocator, "src/configure/config.myco");
 }
