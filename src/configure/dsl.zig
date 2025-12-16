@@ -298,26 +298,17 @@ pub fn apply_config(allocator: Allocator, path: []const u8) !void {
 
                             // TODO: add kind to block?
                             // how do we get the .kind
-                            //
                             const info = nl.LinkInfo{ .ifname = block.name, .kind = "wireguard", .mtu = 12 };
 
                             try nl_sock.add_link(info);
 
-                            var links: [25]nl.LinkInfo = undefined;
-
-                            const n = try nl_sock.dump_links(&links);
-
-                            for (links[0..n]) |link| {
-                                std.debug.print("LINK NAME: {s}\n", .{link.ifname});
-                            }
-
-                            std.debug.print("INFO NAME LEN: {d}\n", .{info.ifname.len});
-
+                            // linux stores the name as null terminated
+                            // we need to cast our name to be null terminated
                             const c_block_name = try allocator.dupeZ(u8, info.ifname);
                             const ifindex = nl.c_nametoifindex(c_block_name);
                             if (ifindex == 0) return error.InterfaceNotFound;
 
-                            var addr = nl.AddrInfo{
+                            const addr = nl.AddrInfo{
                                 .if_index = ifindex,
                                 .prefix_len = pair.value.Addr[8].Number,
                                 .address = .{
@@ -327,9 +318,8 @@ pub fn apply_config(allocator: Allocator, path: []const u8) !void {
                                     pair.value.Addr[6].Number,
                                 },
                             };
-                            try nl_sock.assign_link_ip(info, &addr);
 
-                            // 4. Bring link UP (by index)
+                            try nl_sock.assign_idx_ip(ifindex, addr);
                             try nl_sock.enable_link(info);
                         },
                         else => {},

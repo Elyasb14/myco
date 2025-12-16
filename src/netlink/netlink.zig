@@ -182,9 +182,9 @@ pub const NetlinkSocket = struct {
     /// assign the provided links name the provided addr
     /// TODO: i really don't like how this works
     /// why do i need to pass a mutable pointer (*AddrInfo)
-    pub fn assign_link_ip(nl_sock: NetlinkSocket, link: LinkInfo, addr: *AddrInfo) !void {
-        addr.if_index = c_nametoifindex(link.ifname);
-        try nl_sock.add_addr(addr.*);
+    pub fn assign_idx_ip(nl_sock: NetlinkSocket, link_idx: u32, addr: AddrInfo) !void {
+        std.debug.assert(link_idx == addr.if_index);
+        try nl_sock.add_addr(addr);
     }
 
     /// TODO: should this return a LinkInfo struct?
