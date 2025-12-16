@@ -241,14 +241,37 @@ fn parse_block(allocator: Allocator, tokens: []Token) !Block {
     return block;
 }
 
-fn split_blocks(allocator: Allocator, tokens: []Token) [][]Token {
-    var buf = try std.ArrayList([]Block).initCapacity(allocator, 1024);
+fn split_blocks(allocator: Allocator, tokens: []Token) ![][]Token {
+    var buf = try std.ArrayList([]Token).initCapacity(allocator, 1024);
+
+    var i: usize = 0;
+    for (tokens) |token| {
+        switch (token) {
+            .LBrace => {
+                i += 1;
+                continue;
+            },
+            .RBrace => {
+                try buf.append(allocator, tokens[0..i]);
+                continue;
+            },
+            else => {
+                i += 1;
+                continue;
+            },
+        }
+    }
+    return buf.toOwnedSlice(allocator);
 }
 
 pub fn parse_config_tokens(allocator: Allocator, tokens: []Token) ![]Block {
     var block_container = try std.ArrayList(Block).initCapacity(allocator, 1024);
 
-    const block = try parse_block(allocator, tokens);
-    try block_container.append(allocator, block);
+    const splitted = try split_blocks(allocator, tokens);
+
+    for (splitted) |x| {
+        const block = try parse_block(allocator, x);
+        try block_container.append(allocator, block);
+    }
     return block_container.toOwnedSlice(allocator);
 }
