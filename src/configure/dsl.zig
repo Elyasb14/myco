@@ -305,7 +305,7 @@ pub fn apply_config(allocator: Allocator, path: []const u8) !void {
                             // linux stores the name as null terminated
                             // we need to cast our name to be null terminated
                             const c_block_name = try allocator.dupeZ(u8, info.ifname);
-                            const ifindex = nl.c_nametoifindex(c_block_name);
+                            const ifindex = try nl.c_nametoifindex(allocator, c_block_name);
                             if (ifindex == 0) return error.InterfaceNotFound;
 
                             const addr = nl.AddrInfo{

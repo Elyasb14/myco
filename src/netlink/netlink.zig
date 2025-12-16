@@ -49,8 +49,9 @@ pub const RouteInfo = struct {
 };
 
 /// takes interface name and returns index
-pub fn c_nametoifindex(name: []const u8) u32 {
-    const idx = c.if_nametoindex(@ptrCast(name));
+pub fn c_nametoifindex(allocator: std.mem.Allocator, name: []const u8) !u32 {
+    const c_block_name = try allocator.dupeZ(u8, name);
+    const idx = c.if_nametoindex(@ptrCast(c_block_name));
     return idx;
 }
 
@@ -201,8 +202,14 @@ pub const NetlinkSocket = struct {
             .nlmsg_pid = 0,
         };
 
+        // TODO: we need to make a decision here.
+        // user provided runtime slices are apparently not null terminated
+        // as a result, c_nametoifindex basically just always returns 0 or a wrong index
+        _ = link;
+        const ifimsg = c.ifinfomsg{ .ifi_index = 10, .ifi_change = c.IFF_UP, .ifi_flags = 1 };
+
         // change c.IFF_UP to 1
-        const ifimsg = c.ifinfomsg{ .ifi_index = @intCast(c_nametoifindex(link.ifname)), .ifi_change = c.IFF_UP, .ifi_flags = 1 };
+        // const ifimsg = c.ifinfomsg{ .ifi_index = @intCast(c_nametoifindex(link.ifname)), .ifi_change = c.IFF_UP, .ifi_flags = 1 };
 
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
         offset += @sizeOf(c.nlmsghdr);
