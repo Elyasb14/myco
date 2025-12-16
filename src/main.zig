@@ -16,7 +16,10 @@ pub fn main() !void {
     const blocks = try conf.parse_config_tokens(allocator, tokens);
     for (blocks) |block| {
         for (block.pairs) |pair| {
-            std.debug.print("PAIR: {any}\n", .{pair});
+            switch (pair.value) {
+                .Addr => std.debug.print("ADDR: {any}\n", .{pair.value}),
+                else => {},
+            }
         }
     }
 }

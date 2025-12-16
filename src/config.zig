@@ -245,6 +245,8 @@ fn split_blocks(allocator: Allocator, tokens: []Token) ![][]Token {
     var buf = try std.ArrayList([]Token).initCapacity(allocator, 1024);
 
     var i: usize = 0;
+    var start: usize = 0;
+
     for (tokens) |token| {
         switch (token) {
             .LBrace => {
@@ -252,7 +254,10 @@ fn split_blocks(allocator: Allocator, tokens: []Token) ![][]Token {
                 continue;
             },
             .RBrace => {
-                try buf.append(allocator, tokens[0..i]);
+                try buf.append(allocator, tokens[start .. i + 1]);
+
+                start = i + 1;
+                i += 1;
                 continue;
             },
             else => {
