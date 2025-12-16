@@ -3,7 +3,11 @@ const nl = @import("netlink");
 const linux = std.os.linux;
 
 pub fn main() !void {
-    const nl_sock = try nl.NetlinkSocket.open(linux.NETLINK.ROUTE);
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const nl_sock = try nl.NetlinkSocket.open(allocator, linux.NETLINK.ROUTE);
     defer nl_sock.close();
 
     const info = nl.LinkInfo{ .ifname = "night", .kind = "wireguard", .mtu = 12 };
