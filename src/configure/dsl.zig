@@ -298,6 +298,7 @@ pub fn apply_config(allocator: Allocator, path: []const u8) !void {
 
                             // TODO: add kind to block?
                             // how do we get the .kind
+                            //
                             const info = nl.LinkInfo{ .ifname = block.name, .kind = "wireguard", .mtu = 12 };
 
                             try nl_sock.add_link(info);
@@ -312,8 +313,8 @@ pub fn apply_config(allocator: Allocator, path: []const u8) !void {
 
                             std.debug.print("INFO NAME LEN: {d}\n", .{info.ifname.len});
 
-                            const c_str: [*c]const u8 = @ptrCast(info.ifname);
-                            const ifindex = nl.c_nametoifindex(c_str);
+                            const c_block_name = try allocator.dupeZ(u8, info.ifname);
+                            const ifindex = nl.c_nametoifindex(c_block_name);
                             if (ifindex == 0) return error.InterfaceNotFound;
 
                             var addr = nl.AddrInfo{

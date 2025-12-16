@@ -49,8 +49,9 @@ pub const RouteInfo = struct {
 };
 
 /// takes interface name and returns index
-pub fn c_nametoifindex(name: [*c]const u8) u32 {
-    return c.if_nametoindex(name);
+pub fn c_nametoifindex(name: []const u8) u32 {
+    const idx = c.if_nametoindex(@ptrCast(name));
+    return idx;
 }
 
 /// a wrapper around netlink functions
@@ -180,7 +181,7 @@ pub const NetlinkSocket = struct {
 
     /// assign the provided links name the provided addr
     /// TODO: i really don't like how this works
-    /// why do i need to pass a mutable pointer (*AddrInfo)?
+    /// why do i need to pass a mutable pointer (*AddrInfo)
     pub fn assign_link_ip(nl_sock: NetlinkSocket, link: LinkInfo, addr: *AddrInfo) !void {
         addr.if_index = c_nametoifindex(link.ifname);
         try nl_sock.add_addr(addr.*);
