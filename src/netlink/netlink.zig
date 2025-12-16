@@ -57,10 +57,11 @@ pub fn c_nametoifindex(allocator: std.mem.Allocator, name: []const u8) !u32 {
 
 /// a wrapper around netlink functions
 pub const NetlinkSocket = struct {
+    allocator: std.mem.Allocator,
     nl_sock: i32,
     kern_addr: linux.sockaddr.nl,
 
-    pub fn open(protocol: u32) !NetlinkSocket {
+    pub fn open(allocator: std.mem.Allocator, protocol: u32) !NetlinkSocket {
         const sock: i32 = @intCast(linux.socket(linux.AF.NETLINK, linux.SOCK.RAW, protocol));
 
         const kern_addr = linux.sockaddr.nl{
@@ -78,7 +79,7 @@ pub const NetlinkSocket = struct {
         if (linux.bind(@intCast(sock), @ptrCast(&addr), @sizeOf(@TypeOf(addr))) < 0) {
             return error.CantBind;
         }
-        return NetlinkSocket{ .nl_sock = sock, .kern_addr = kern_addr };
+        return NetlinkSocket{ .allocator = allocator, .nl_sock = sock, .kern_addr = kern_addr };
     }
 
     pub fn close(sock: NetlinkSocket) void {
@@ -202,14 +203,8 @@ pub const NetlinkSocket = struct {
             .nlmsg_pid = 0,
         };
 
-        // TODO: we need to make a decision here.
-        // user provided runtime slices are apparently not null terminated
-        // as a result, c_nametoifindex basically just always returns 0 or a wrong index
-        _ = link;
-        const ifimsg = c.ifinfomsg{ .ifi_index = 10, .ifi_change = c.IFF_UP, .ifi_flags = 1 };
-
-        // change c.IFF_UP to 1
-        // const ifimsg = c.ifinfomsg{ .ifi_index = @intCast(c_nametoifindex(link.ifname)), .ifi_change = c.IFF_UP, .ifi_flags = 1 };
+        //change c.IFF_UP to 1
+        const ifimsg = c.ifinfomsg{ .ifi_index = @intCast(try c_nametoifindex(nl_sock.allocator, link.ifname)), .ifi_change = c.IFF_UP, .ifi_flags = 1 };
 
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
         offset += @sizeOf(c.nlmsghdr);

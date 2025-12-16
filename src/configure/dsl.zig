@@ -293,7 +293,7 @@ pub fn apply_config(allocator: Allocator, path: []const u8) !void {
                 for (block.pairs) |pair| {
                     switch (pair.value) {
                         .Addr => {
-                            const nl_sock = try nl.NetlinkSocket.open(linux.NETLINK.ROUTE);
+                            const nl_sock = try nl.NetlinkSocket.open(allocator, linux.NETLINK.ROUTE);
                             defer nl_sock.close();
 
                             // TODO: add kind to block?
