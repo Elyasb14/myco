@@ -199,7 +199,7 @@ fn parse_pairs(allocator: Allocator, tokens: []Token) ![]Pair {
         if (key_tok == .RBrace) break;
         if (i + 1 >= tokens.len) return error.UnexpectedEnd;
 
-        // TODO: why do we do this
+        // TODO: can we infer if this is an addr better?
         if (tokens[i + 1] == .Number and tokens[i + 2] == .Dot) {
             const addr = .{ tokens[i + 1].Number, tokens[i + 3].Number, tokens[i + 5].Number, tokens[i + 7].Number, tokens[i + 9].Number };
             const p = Pair{ .key = key_tok.Ident, .value = Value{ .Addr = addr } };
