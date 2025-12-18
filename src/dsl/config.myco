@@ -1,5 +1,6 @@
-link enp0s25 {
-    address 10.225.139.5/26
+link wg0 {
+    address 10.226.139.5/26
     up true
+    kind wireguard 
 }
 

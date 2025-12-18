@@ -20,14 +20,11 @@ const NlMsgErr = extern struct {
     msg: c.nlmsghdr,
 };
 
-/// TODO: should we just calculate the index from the name?
-/// there are libc functions for that, cuz we kinda store index twice with ifname and index
 pub const LinkInfo = struct {
     address: ?[]const u8 = null, // c.IFLA_ADDRESS
     broadcast: ?[]const u8 = null, // c.IFLA_BROADCAST
     ifname: []const u8, // c.IFLA_IFNAME
     mtu: ?u32 = null, // c.IFLA_MTU
-    link: ?u32 = null, // c.IFLA_LINK
     kind: ?[]const u8 = null, // c.IFLA_LINKINFO → c.IFLA_INFO_KIND
     info_data: ?[]u8 = null, // c.IFLA_LINKINFO -> c.IFLA_INFO_DATA
 };
@@ -121,10 +118,6 @@ pub const NetlinkSocket = struct {
             add_rtattr(&buf, &offset, c.IFLA_MTU, std.mem.asBytes(&mtu));
         }
 
-        if (info.link) |parent| {
-            add_rtattr(&buf, &offset, c.IFLA_LINK, std.mem.asBytes(&parent));
-        }
-
         if (info.kind) |kind| {
             // TODO: do we need to add more things to this nested atttr?
             const nested_start = add_rtattr_nested_start(&buf, &offset, c.IFLA_LINKINFO);
@@ -138,8 +131,10 @@ pub const NetlinkSocket = struct {
         try sys.send(@intCast(nl_sock.nl_sock), buf[0..offset], &nl_sock.kern_addr);
         recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr) catch |err| switch (err) {
             NetlinkError.OP_NOT_SUPPORTED => {
-                std.log.err("\x1b[31mlink type not supported\x1b[0m: {any}", .{info});
-                return err;
+                if (info.kind) |kind| {
+                    std.log.err("\x1b[31mlink type not supported\x1b[0m: {s}", .{kind});
+                    return err;
+                }
             },
             else => return err,
         };
@@ -660,12 +655,6 @@ fn parse_link_attrs(buf: []u8) LinkInfo {
                 if (data.len == 4) {
                     const arr: *const [4]u8 = @ptrCast(data.ptr);
                     link.mtu = std.mem.readInt(u32, arr, .little);
-                }
-            },
-            c.IFLA_LINK => {
-                if (data.len == 4) {
-                    const arr: *const [4]u8 = @ptrCast(data.ptr);
-                    link.link = std.mem.readInt(u32, arr, .little);
                 }
             },
             c.IFLA_LINKINFO => parse_linkinfo(data, &link),
