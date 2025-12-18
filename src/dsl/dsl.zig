@@ -267,7 +267,7 @@ fn split_blocks(allocator: Allocator, tokens: []Token) ![][]Token {
     return buf.toOwnedSlice(allocator);
 }
 
-pub fn parse_config_tokens(allocator: Allocator, tokens: []Token) ![]Block {
+pub fn parse_tokens(allocator: Allocator, tokens: []Token) ![]Block {
     var block_container = try std.ArrayList(Block).initCapacity(allocator, 1024);
 
     const splitted = try split_blocks(allocator, tokens);

@@ -11,7 +11,7 @@ pub fn apply_config(allocator: Allocator, path: []const u8) !void {
     var lexer = dsl.Lexer.init(allocator, contents);
     const tokens = try lexer.tokenize();
 
-    const blocks = try dsl.parse_config_tokens(allocator, tokens);
+    const blocks = try dsl.parse_tokens(allocator, tokens);
 
     const nl_sock = try nl.NetlinkSocket.open(allocator, linux.NETLINK.ROUTE);
     defer nl_sock.close();
