@@ -181,17 +181,13 @@ pub const NetlinkSocket = struct {
         };
     }
 
-    /// assign the provided links name the provided addr
-    /// TODO: i really don't like how this works
-    /// why do i need to pass a mutable pointer (*AddrInfo)
+    /// assign the link_idx the provided addr
     pub fn assign_idx_ip(nl_sock: NetlinkSocket, link_idx: u32, addr: AddrInfo) !void {
         std.debug.assert(link_idx == addr.if_index);
         try nl_sock.add_addr(addr);
     }
 
-    /// TODO: should this return a LinkInfo struct?
-    /// should we pass a LinkInfo struct?
-    pub fn enable_link(nl_sock: NetlinkSocket, link: LinkInfo) !void {
+    pub fn enable_link(nl_sock: NetlinkSocket, link_idx: u32) !void {
         var buf: [8192 * 2]u8 align(@alignOf(c.nlmsghdr)) = undefined;
         var offset: usize = 0;
 
@@ -204,7 +200,7 @@ pub const NetlinkSocket = struct {
         };
 
         //change c.IFF_UP to 1
-        const ifimsg = c.ifinfomsg{ .ifi_index = @intCast(try c_nametoifindex(nl_sock.allocator, link.ifname)), .ifi_change = c.IFF_UP, .ifi_flags = 1 };
+        const ifimsg = c.ifinfomsg{ .ifi_index = @intCast(link_idx), .ifi_change = c.IFF_UP, .ifi_flags = 1 };
 
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
         offset += @sizeOf(c.nlmsghdr);
@@ -216,8 +212,7 @@ pub const NetlinkSocket = struct {
         try recv_ack(nl_sock.nl_sock, &nl_sock.kern_addr);
     }
 
-    /// TODO: should we take in a LinkInfo struct or just the u32 index?
-    pub fn disable_link(nl_sock: NetlinkSocket, link: LinkInfo) !void {
+    pub fn disable_link(nl_sock: NetlinkSocket, link_idx: u32) !void {
         var buf: [8192 * 2]u8 align(@alignOf(c.nlmsghdr)) = undefined;
         var offset: usize = 0;
 
@@ -230,7 +225,7 @@ pub const NetlinkSocket = struct {
         };
 
         // change the c.IFF_UP flag to 0
-        const ifimsg = c.ifinfomsg{ .ifi_index = @intCast(c_nametoifindex(link.ifname)), .ifi_change = c.IFF_UP, .ifi_flags = 0 };
+        const ifimsg = c.ifinfomsg{ .ifi_index = @intCast(link_idx), .ifi_change = c.IFF_UP, .ifi_flags = 0 };
 
         @memcpy(buf[0..@sizeOf(c.nlmsghdr)], std.mem.asBytes(&nlh));
         offset += @sizeOf(c.nlmsghdr);
@@ -288,7 +283,7 @@ pub const NetlinkSocket = struct {
                     const attr_len = hdr.nlmsg_len - @sizeOf(c.nlmsghdr) - @sizeOf(c.ifinfomsg);
                     const attr_buf = buf[@intCast(attr_start - @intFromPtr(&buf))..@intCast(attr_start - @intFromPtr(&buf) + attr_len)];
 
-                    // FIXME: This differs from the other parse functions in that I have to create the struct before parsing
+                    // TODO: This differs from the other parse functions in that I have to create the struct before parsing
                     // the other parse functions return the relevant struct
                     // this one takes a pointer, modifies it, then returns void
                     const link = parse_link_attrs(attr_buf);

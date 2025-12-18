@@ -11,7 +11,7 @@ pub fn main() !void {
     defer nl_sock.close();
 
     const info = nl.LinkInfo{ .ifname = "wg0", .kind = "wireguard", .mtu = 12 };
-    var addr = nl.AddrInfo{ .if_index = try nl.c_nametoifindex(allocator, "fuck"), .prefix_len = 24, .address = .{ 192, 168, 33, 1 } };
+    var addr = nl.AddrInfo{ .if_index = try nl.c_nametoifindex(allocator, "wg0"), .prefix_len = 24, .address = .{ 192, 168, 33, 1 } };
 
     try nl_sock.add_link(info);
 

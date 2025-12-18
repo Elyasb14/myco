@@ -147,7 +147,7 @@ pub const Pair = struct {
     value: Value,
 };
 
-pub const BlockType = enum(u8) { LINK, FW_RULE };
+pub const BlockType = enum(u8) { LINK, FW_RULE, ADDR };
 
 /// e.g.
 /// # type and name
@@ -172,6 +172,8 @@ fn parse_block_type(token: Token) !BlockType {
             return BlockType.LINK;
         } else if (std.mem.eql(u8, token.Ident, "fw_rule")) {
             return BlockType.FW_RULE;
+        } else if (std.mem.eql(u8, token.Ident, "addr")) {
+            return BlockType.ADDR;
         } else {
             std.log.err("invalid block type: {s}\n", .{token.Ident});
             return error.UnsupportedBlockType;

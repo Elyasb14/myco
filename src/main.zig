@@ -19,7 +19,7 @@ pub fn apply_config(allocator: Allocator, path: []const u8) !void {
     for (blocks) |block| {
         switch (block.type) {
             .LINK => {
-                var info = nl.LinkInfo{ .ifname = block.name, .kind = "dummy", .mtu = 12 };
+                var info = nl.LinkInfo{ .ifname = block.name, .kind = "dummy", .mtu = 1500 };
 
                 for (block.pairs) |pair| {
                     switch (pair.value) {
@@ -45,7 +45,7 @@ pub fn apply_config(allocator: Allocator, path: []const u8) !void {
                             };
 
                             try nl_sock.assign_idx_ip(ifindex, addr);
-                            try nl_sock.enable_link(info);
+                            try nl_sock.enable_link(ifindex);
                         },
                         .Ident => {
                             if (std.mem.eql(u8, pair.key, "kind")) {
@@ -56,6 +56,7 @@ pub fn apply_config(allocator: Allocator, path: []const u8) !void {
                     }
                 }
             },
+            .ADDR => {},
             else => {},
         }
     }
