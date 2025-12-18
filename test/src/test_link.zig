@@ -11,12 +11,12 @@ pub fn main() !void {
     defer nl_sock.close();
 
     const info = nl.LinkInfo{ .ifname = "wg0", .kind = "wireguard", .mtu = 12 };
-    var addr = nl.AddrInfo{ .if_index = nl.c_nametoifindex("fuck"), .prefix_len = 24, .address = .{ 192, 168, 33, 1 } };
+    var addr = nl.AddrInfo{ .if_index = try nl.c_nametoifindex(allocator, "fuck"), .prefix_len = 24, .address = .{ 192, 168, 33, 1 } };
 
     try nl_sock.add_link(info);
 
     try nl_sock.enable_link(info);
-    try nl_sock.assign_link_ip(info, &addr);
+    try nl_sock.assign_idx_ip(addr.if_index, &addr);
 
     try nl_sock.disable_link(info);
     try nl_sock.del_link(info);
