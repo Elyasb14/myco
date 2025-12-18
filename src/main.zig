@@ -19,7 +19,7 @@ pub fn apply_config(allocator: Allocator, path: []const u8) !void {
     for (blocks) |block| {
         switch (block.type) {
             .LINK => {
-                const info = nl.LinkInfo{ .ifname = block.name, .kind = "wireguard", .mtu = 12 };
+                var info = nl.LinkInfo{ .ifname = block.name, .kind = "dummy", .mtu = 12 };
 
                 for (block.pairs) |pair| {
                     switch (pair.value) {
@@ -32,6 +32,7 @@ pub fn apply_config(allocator: Allocator, path: []const u8) !void {
                             const ifindex = try nl.c_nametoifindex(allocator, c_block_name);
                             if (ifindex == 0) return error.InterfaceNotFound;
 
+                            // TODO: make value.Addr less jank
                             const addr = nl.AddrInfo{
                                 .if_index = ifindex,
                                 .prefix_len = pair.value.Addr[8].Number,
@@ -46,9 +47,11 @@ pub fn apply_config(allocator: Allocator, path: []const u8) !void {
                             try nl_sock.assign_idx_ip(ifindex, addr);
                             try nl_sock.enable_link(info);
                         },
-                        // .Ident => {
-                        //     if (std.mem.eql(pair.key, "type")) {}
-                        // },
+                        .Ident => {
+                            if (std.mem.eql(u8, pair.key, "kind")) {
+                                info.kind = pair.value.Ident;
+                            }
+                        },
                         else => {},
                     }
                 }
@@ -57,6 +60,7 @@ pub fn apply_config(allocator: Allocator, path: []const u8) !void {
         }
     }
 }
+
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
