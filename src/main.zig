@@ -35,18 +35,17 @@ pub fn apply_config(allocator: Allocator, path: []const u8) !void {
 
                 try nl_sock.enable_link(ifindex);
 
-                // 5. Assign IPs
                 for (block.pairs) |pair| {
                     switch (pair.value) {
                         .Addr => {
                             const addr = nl.AddrInfo{
                                 .if_index = ifindex,
-                                .prefix_len = pair.value.Addr[8].Number,
+                                .prefix_len = pair.value.Addr[4],
                                 .address = .{
-                                    pair.value.Addr[0].Number,
-                                    pair.value.Addr[2].Number,
-                                    pair.value.Addr[4].Number,
-                                    pair.value.Addr[6].Number,
+                                    pair.value.Addr[0],
+                                    pair.value.Addr[1],
+                                    pair.value.Addr[2],
+                                    pair.value.Addr[3],
                                 },
                             };
                             try nl_sock.assign_idx_ip(ifindex, addr);

@@ -139,7 +139,7 @@ pub const Value = union(enum) {
     String: []const u8,
     Number: i64,
     Ident: []const u8,
-    Addr: []Token,
+    Addr: [5]u8,
 };
 
 pub const Pair = struct {
@@ -201,7 +201,9 @@ fn parse_pairs(allocator: Allocator, tokens: []Token) ![]Pair {
 
         // TODO: why do we do this
         if (tokens[i + 1] == .Number and tokens[i + 2] == .Dot) {
-            const p = Pair{ .key = key_tok.Ident, .value = Value{ .Addr = tokens[i + 1 .. i + 10] } };
+            // const p = Pair{ .key = key_tok.Ident, .value = Value{ .Addr = tokens[i + 1 .. i + 10] } };
+            const addr = .{ tokens[i + 1].Number, tokens[i + 3].Number, tokens[i + 5].Number, tokens[i + 7].Number, tokens[i + 9].Number };
+            const p = Pair{ .key = key_tok.Ident, .value = Value{ .Addr = addr } };
             try pairs.append(allocator, p);
 
             i += 10;
