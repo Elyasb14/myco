@@ -17,14 +17,14 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/netlink/netlink.zig"),
     });
 
-    const config_mod = b.addModule("configure", .{
-        .root_source_file = b.path("src/configure/dsl.zig"),
+    const dsl_mod = b.addModule("dsl", .{
+        .root_source_file = b.path("src/dsl/dsl.zig"),
     });
 
-    config_mod.addImport("netlink", netlink_mod);
+    dsl_mod.addImport("netlink", netlink_mod);
 
     myco_exe.root_module.addImport("netlink", netlink_mod);
-    myco_exe.root_module.addImport("config", config_mod);
+    myco_exe.root_module.addImport("dsl", dsl_mod);
     myco_exe.linkLibC();
 
     b.installArtifact(myco_exe);

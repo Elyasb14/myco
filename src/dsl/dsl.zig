@@ -1,6 +1,5 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const nl = @import("netlink");
 const linux = std.os.linux;
 
 const Token = union(enum) {
@@ -268,7 +267,7 @@ fn split_blocks(allocator: Allocator, tokens: []Token) ![][]Token {
     return buf.toOwnedSlice(allocator);
 }
 
-fn parse_config_tokens(allocator: Allocator, tokens: []Token) ![]Block {
+pub fn parse_config_tokens(allocator: Allocator, tokens: []Token) ![]Block {
     var block_container = try std.ArrayList(Block).initCapacity(allocator, 1024);
 
     const splitted = try split_blocks(allocator, tokens);
@@ -278,58 +277,4 @@ fn parse_config_tokens(allocator: Allocator, tokens: []Token) ![]Block {
         try block_container.append(allocator, block);
     }
     return block_container.toOwnedSlice(allocator);
-}
-
-pub fn apply_config(allocator: Allocator, path: []const u8) !void {
-    var buf: [8192]u8 = undefined;
-    const contents = try std.fs.cwd().readFile(path, &buf);
-
-    var lexer = Lexer.init(allocator, contents);
-    const tokens = try lexer.tokenize();
-
-    const blocks = try parse_config_tokens(allocator, tokens);
-
-    const nl_sock = try nl.NetlinkSocket.open(allocator, linux.NETLINK.ROUTE);
-    defer nl_sock.close();
-
-    for (blocks) |block| {
-        switch (block.type) {
-            .LINK => {
-                const info = nl.LinkInfo{ .ifname = block.name, .kind = "wireguard", .mtu = 12 };
-
-                for (block.pairs) |pair| {
-                    switch (pair.value) {
-                        .Addr => {
-                            try nl_sock.add_link(info);
-
-                            // linux stores the name as null terminated
-                            // we need to cast our name to be null terminated
-                            const c_block_name = try allocator.dupeZ(u8, info.ifname);
-                            const ifindex = try nl.c_nametoifindex(allocator, c_block_name);
-                            if (ifindex == 0) return error.InterfaceNotFound;
-
-                            const addr = nl.AddrInfo{
-                                .if_index = ifindex,
-                                .prefix_len = pair.value.Addr[8].Number,
-                                .address = .{
-                                    pair.value.Addr[0].Number,
-                                    pair.value.Addr[2].Number,
-                                    pair.value.Addr[4].Number,
-                                    pair.value.Addr[6].Number,
-                                },
-                            };
-
-                            try nl_sock.assign_idx_ip(ifindex, addr);
-                            try nl_sock.enable_link(info);
-                        },
-                        // .Ident => {
-                        //     if (std.mem.eql(pair.key, "type")) {}
-                        // },
-                        else => {},
-                    }
-                }
-            },
-            else => {},
-        }
-    }
 }
