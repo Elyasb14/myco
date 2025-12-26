@@ -1,6 +1,0 @@
-link wg0 {
-    address 10.227.139.5/26
-    up true
-    kind wireguard 
-}
-

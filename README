@@ -1,3 +1,7 @@
 MYCO
+ 
+system networking bindings in zig for linux
 
-A router implementation based on linux.
+- netlink api (src/netlink)
+    - add and delete routes
+
